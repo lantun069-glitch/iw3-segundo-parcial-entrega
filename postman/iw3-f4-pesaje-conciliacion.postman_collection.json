@@ -1,0 +1,371 @@
+{
+  "info": {
+    "name": "iw3 - F4 Pesaje final y conciliacion (TP16-TP18)",
+    "description": "Coleccion versionable para la segunda unidad de F4: pesaje final (transicion 3->4, TP16), conciliacion devuelta en esa misma operacion (TP18) y su consulta posterior (TP17). Cubre: login, ordenes de apoyo, pesaje final sobre orden inexistente (404), pesaje final en estado 1 (409), conciliacion sobre orden inexistente (404), conciliacion en estado 1 (409), tara/activacion/lectura/cierre sobre la orden principal, conciliacion en estado 2 (409) y en estado 3 (409, antes del pesaje final), pesoBrutoKg ausente/no positivo (400), pesaje final valido con diferencia POSITIVA (200, verifica neto/productoCargadoKg/diferenciaKg y los ULTIMOS VALORES de temperatura/densidad/caudal), conciliacion posterior (200, idéntica a la respuesta del POST), pesaje final repetido (409) y pesaje final sin token (401). No incluye credenciales reales: testUsername/testPassword/jwtToken quedan vacios en este archivo versionado.\n\nDiferencia CERO y NEGATIVA, y la carrera de dos pesajes finales concurrentes sobre la misma orden, **no se ejercitan aqui**: se probaron con curl secuencial/en paralelo durante la implementacion (diferencia 0 y negativa con valores de bruto distintos sobre el mismo calculo; la carrera con el mismo motivo que las carreras de F3/F4-cierre, el runner de Postman es secuencial). Ver docs/contrato-f4-pesaje-conciliacion.md para esa evidencia.\n\nLimite deliberado: igual que las colecciones anteriores, estas pruebas solo verifican lo que la respuesta HTTP expone. No leen la base de datos.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "testUsername", "value": "", "type": "string", "description": "Usuario de prueba de F1 (no es secreto por si solo). Definir por entorno/--env-var." },
+    { "key": "testPassword", "value": "", "type": "string", "description": "NUNCA versionar un valor real acá. Pasar por --env-var testPassword=..." },
+    { "key": "jwtToken", "value": "", "type": "string", "description": "Se completa en tiempo de ejecucion con la respuesta de Login." },
+    { "key": "orderNumberA", "value": "", "type": "string", "description": "Orden para el flujo completo hasta pesaje final/conciliacion." },
+    { "key": "orderNumberB", "value": "", "type": "string", "description": "Orden para probar pesaje final/conciliacion en estado 1 (sin tara)." },
+    { "key": "orderNumberNoExist", "value": "", "type": "string", "description": "orderNumber que nunca se crea en esta corrida." },
+    { "key": "extSuffix", "value": "", "type": "string" },
+    { "key": "claveA", "value": "", "type": "string", "description": "Se completa con la respuesta de la tara de la orden A." }
+  ],
+  "item": [
+    {
+      "name": "01 - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "username", "value": "{{testUsername}}", "type": "text" },
+            { "key": "password", "value": "{{testPassword}}", "type": "text" }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "login"] }
+      },
+      "event": [{
+        "listen": "prerequest",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.collectionVariables.set('jwtToken', '');",
+          "pm.collectionVariables.set('claveA', '');",
+          "",
+          "var base = Date.now() % 2000000000;",
+          "pm.collectionVariables.set('orderNumberA', String(base));",
+          "pm.collectionVariables.set('orderNumberB', String(base + 1));",
+          "pm.collectionVariables.set('orderNumberNoExist', String(base + 500000));",
+          "pm.collectionVariables.set('extSuffix', String(base));"
+        ]}
+      }, {
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('login responde 200', function () { pm.response.to.have.status(200); });",
+          "pm.test('el cuerpo tiene forma de JWT', function () {",
+          "    var token = pm.response.text();",
+          "    pm.expect(token.split('.').length).to.eql(3);",
+          "    pm.collectionVariables.set('jwtToken', token);",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Crear orden A (flujo completo)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberA}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-F4B-{{extSuffix}}-A\",\n    \"patente\": \"F4B001A\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-F4B-{{extSuffix}}-A\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"F4BA\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-F4B-{{extSuffix}}-A\",\n    \"razonSocial\": \"Cliente F4B A\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-F4B-{{extSuffix}}-A\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden A creada en estado 1 (201)', function () {",
+        "    pm.response.to.have.status(201);",
+        "    pm.expect(pm.response.json().estado).to.eql(1);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "03 - Crear orden B (estados invalidos, sin tara)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberB}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 7000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-F4B-{{extSuffix}}-B\",\n    \"patente\": \"F4B001B\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-F4B-{{extSuffix}}-B\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"F4BB\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-F4B-{{extSuffix}}-B\",\n    \"razonSocial\": \"Cliente F4B B\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-F4B-{{extSuffix}}-B\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden B creada en estado 1 (201)', function () {",
+        "    pm.response.to.have.status(201);",
+        "    pm.expect(pm.response.json().estado).to.eql(1);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "04 - Pesaje final sobre orden inexistente (404)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": 16000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberNoExist}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberNoExist}}", "pesaje-final"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 404', function () {",
+        "    pm.response.to.have.status(404);",
+        "    pm.expect(pm.response.json().devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "05 - Pesaje final sobre B en estado 1 (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": 16000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "pesaje-final"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409 por estado incompatible', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('no esta en estado 3');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "06 - Conciliacion sobre orden inexistente (404)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberNoExist}}/conciliacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberNoExist}}", "conciliacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 404', function () {",
+        "    pm.response.to.have.status(404);",
+        "    pm.expect(pm.response.json().devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "07 - Conciliacion sobre B en estado 1 (409)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/conciliacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "conciliacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409 por estado incompatible', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('no esta en estado 4');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "08 - Tara valida sobre A (200, estado 1 -> 2)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('tara valida responde 200 con estado 2', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.estado).to.eql(2);",
+        "    pm.collectionVariables.set('claveA', String(body.claveActivacion));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "09 - Activacion valida sobre A (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveA}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('clave correcta responde 200', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().presetKg).to.eql(8000);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "10 - Lectura valida sobre A (200, masa 4000)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 4000.000,\n  \"densidad\": 0.54,\n  \"temperaturaC\": 18.5,\n  \"caudalKgH\": 3000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('lectura aceptada', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().aceptada).to.eql(true);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "11 - Conciliacion sobre A en estado 2 (409)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/conciliacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "conciliacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: estado actual 2', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('estado actual: 2');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "12 - Cierre valido sobre A (200, estado 2 -> 3)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "cierre"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('cierre valido responde 200 con estado 3', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().estado).to.eql(3);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "13 - Conciliacion sobre A en estado 3, antes del pesaje final (409)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/conciliacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "conciliacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: estado actual 3', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('estado actual: 3');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "14 - Pesaje final con pesoBrutoKg ausente (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "pesaje-final"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 400 por campo ausente', function () {",
+        "    pm.response.to.have.status(400);",
+        "    pm.expect(pm.response.json().message).to.include('pesoBrutoKg');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "15 - Pesaje final con pesoBrutoKg no positivo (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": 0\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "pesaje-final"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 400 por valor no positivo', function () {",
+        "    pm.response.to.have.status(400);",
+        "    pm.expect(pm.response.json().message).to.include('pesoBrutoKg');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "16 - Pesaje final valido sobre A (200, diferencia positiva +80)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": 16080.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "pesaje-final"] },
+        "description": "tara=12000, bruto=16080 -> neto=4080; productoCargadoKg=4000 (ultima masa aceptada) -> diferencia=+80."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('pesaje final responde 200 con conciliacion correcta', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.orderNumber).to.eql(parseInt(pm.collectionVariables.get('orderNumberA'), 10));",
+        "    pm.expect(body.taraKg).to.eql(12000);",
+        "    pm.expect(body.pesoBrutoKg).to.eql(16080);",
+        "    pm.expect(body.netoKg).to.eql(4080);",
+        "    pm.expect(body.productoCargadoKg).to.eql(4000);",
+        "    pm.expect(body.diferenciaKg).to.eql(80);",
+        "    pm.expect(body.ultimaTemperaturaC).to.eql(18.5);",
+        "    pm.expect(body.ultimaDensidad).to.eql(0.54);",
+        "    pm.expect(body.ultimoCaudalKgH).to.eql(3000);",
+        "    pm.collectionVariables.set('conciliacionPost', JSON.stringify(body));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "17 - Conciliacion sobre A despues del pesaje final (200, igual al POST)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/conciliacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "conciliacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('conciliacion por GET es idéntica a la del POST de pesaje final', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    var post = JSON.parse(pm.collectionVariables.get('conciliacionPost'));",
+        "    pm.expect(body).to.eql(post);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "18 - Pesaje final repetido sobre A (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": 16080.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "pesaje-final"] },
+        "description": "A ya quedo en estado 4 por el item anterior."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: ya no esta en estado 3', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('estado actual: 4');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "19 - Pesaje final sin token (401)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": 16000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "pesaje-final"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('sin token responde 401', function () { pm.response.to.have.status(401); });",
+        "pm.test('cuerpo vacio (no pasa por StandartResponse)', function () {",
+        "    pm.expect(pm.response.text()).to.have.lengthOf(0);",
+        "});"
+      ]}}]
+    }
+  ]
+}

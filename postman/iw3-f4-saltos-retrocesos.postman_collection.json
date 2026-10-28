@@ -1,0 +1,483 @@
+{
+  "info": {
+    "name": "iw3 - F4 Saltos y retrocesos de estado (matriz de salida)",
+    "description": "Coleccion versionable que cubre las combinaciones (operacion, estado inicial incompatible) de la matriz de saltos/retrocesos que quedaron identificadas como faltantes al revisar el criterio de salida de F4 (ver docs/estado-proyecto.md y docs/decisiones.md, bloque de esta unidad). Las ocho combinaciones solo se volvieron testeables a partir de F4, porque antes no existian ordenes en estado 3/4: registrarTara sobre estado 3 y 4, activar sobre estado 3 y 4, registrarLectura sobre estado 1 y 4, cerrarCarga sobre estado 4, y registrarPesajeFinal sobre estado 2. Todas esperan 409 con mensaje de estado incompatible, sin devInfo con detalle interno (siempre 'No stack trace').\n\nNo repite ninguna combinacion ya cubierta en las colecciones anteriores (iw3-f2-recepcion, iw3-f3-tara-activacion, iw3-f3-telemetria, iw3-f4-cierre, iw3-f4-pesaje-conciliacion): en particular, 'registrarLectura sobre estado 1' se verifico explicitamente que NO estaba cubierta (la unica prueba previa de lectura antes de activar usaba una orden ya en estado 2, con tara registrada, no en estado 1) antes de agregarla aqui.\n\nLimite deliberado, igual que las colecciones anteriores: estas pruebas solo verifican lo que la respuesta HTTP expone. No leen la base de datos para confirmar ausencia de cambios tras cada rechazo; esa inferencia se apoya en que, para las cinco operaciones de negocio involucradas, la excepcion de estado se lanza antes de cualquier save() dentro de la misma transaccion (revision de codigo), no en una lectura directa — ver docs/decisiones.md para el detalle completo de esta unidad.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "testUsername", "value": "", "type": "string", "description": "Usuario de prueba de F1 (no es secreto por si solo). Definir por entorno/--env-var." },
+    { "key": "testPassword", "value": "", "type": "string", "description": "NUNCA versionar un valor real acá. Pasar por --env-var testPassword=..." },
+    { "key": "jwtToken", "value": "", "type": "string", "description": "Se completa en tiempo de ejecucion con la respuesta de Login." },
+    { "key": "orderNumberA", "value": "", "type": "string", "description": "Avanzada hasta estado 3 (tara+activacion+lectura+cierre)." },
+    { "key": "orderNumberB", "value": "", "type": "string", "description": "Avanzada hasta estado 4 (tara+activacion+lectura+cierre+pesaje final)." },
+    { "key": "orderNumberC", "value": "", "type": "string", "description": "Se deja en estado 1 (solo creada, sin tara)." },
+    { "key": "orderNumberD", "value": "", "type": "string", "description": "Avanzada hasta estado 2 (tara+activacion+lectura), sin cerrar." },
+    { "key": "extSuffix", "value": "", "type": "string" },
+    { "key": "claveA", "value": "", "type": "string" },
+    { "key": "claveB", "value": "", "type": "string" },
+    { "key": "claveD", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "username", "value": "{{testUsername}}", "type": "text" },
+            { "key": "password", "value": "{{testPassword}}", "type": "text" }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "login"] }
+      },
+      "event": [{
+        "listen": "prerequest",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.collectionVariables.set('jwtToken', '');",
+          "pm.collectionVariables.set('claveA', '');",
+          "pm.collectionVariables.set('claveB', '');",
+          "pm.collectionVariables.set('claveD', '');",
+          "",
+          "var base = Date.now() % 2000000000;",
+          "pm.collectionVariables.set('orderNumberA', String(base));",
+          "pm.collectionVariables.set('orderNumberB', String(base + 1));",
+          "pm.collectionVariables.set('orderNumberC', String(base + 2));",
+          "pm.collectionVariables.set('orderNumberD', String(base + 3));",
+          "pm.collectionVariables.set('extSuffix', String(base));"
+        ]}
+      }, {
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('login responde 200', function () { pm.response.to.have.status(200); });",
+          "pm.test('el cuerpo tiene forma de JWT', function () {",
+          "    var token = pm.response.text();",
+          "    pm.expect(token.split('.').length).to.eql(3);",
+          "    pm.collectionVariables.set('jwtToken', token);",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Crear ordenes A, B, C y D (estado 1)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberA}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-SR-{{extSuffix}}-A\",\n    \"patente\": \"SR0001A\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-SR-{{extSuffix}}-A\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"SRA\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-SR-{{extSuffix}}-A\",\n    \"razonSocial\": \"Cliente SR A\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-SR-{{extSuffix}}-A\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden A creada en estado 1 (201)', function () { pm.response.to.have.status(201); });"
+      ]}}]
+    },
+    {
+      "name": "03 - Crear orden B (estado 1)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberB}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-SR-{{extSuffix}}-B\",\n    \"patente\": \"SR0001B\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-SR-{{extSuffix}}-B\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"SRB\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-SR-{{extSuffix}}-B\",\n    \"razonSocial\": \"Cliente SR B\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-SR-{{extSuffix}}-B\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden B creada en estado 1 (201)', function () { pm.response.to.have.status(201); });"
+      ]}}]
+    },
+    {
+      "name": "04 - Crear orden C (queda en estado 1, sin tara)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberC}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-SR-{{extSuffix}}-C\",\n    \"patente\": \"SR0001C\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-SR-{{extSuffix}}-C\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"SRC\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-SR-{{extSuffix}}-C\",\n    \"razonSocial\": \"Cliente SR C\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-SR-{{extSuffix}}-C\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden C creada en estado 1 (201)', function () { pm.response.to.have.status(201); });"
+      ]}}]
+    },
+    {
+      "name": "05 - Crear orden D (estado 1)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberD}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-SR-{{extSuffix}}-D\",\n    \"patente\": \"SR0001D\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-SR-{{extSuffix}}-D\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"SRD\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-SR-{{extSuffix}}-D\",\n    \"razonSocial\": \"Cliente SR D\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-SR-{{extSuffix}}-D\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden D creada en estado 1 (201)', function () { pm.response.to.have.status(201); });"
+      ]}}]
+    },
+    {
+      "name": "06 - Avanzar A: tara+activacion+lectura+cierre (deja A en estado 3)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('tara A responde 200', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.collectionVariables.set('claveA', String(pm.response.json().claveActivacion));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "07 - Activacion A",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveA}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('activacion A responde 200', function () { pm.response.to.have.status(200); });"
+      ]}}]
+    },
+    {
+      "name": "08 - Lectura valida A",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 4000.000,\n  \"densidad\": 0.54,\n  \"temperaturaC\": 18.5,\n  \"caudalKgH\": 3000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('lectura A aceptada', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().aceptada).to.eql(true); });"
+      ]}}]
+    },
+    {
+      "name": "09 - Cierre A (deja A en estado 3)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "cierre"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('cierre A responde 200 con estado 3', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().estado).to.eql(3);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "10 - Avanzar B: tara+activacion+lectura+cierre+pesaje final (deja B en estado 4)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('tara B responde 200', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.collectionVariables.set('claveB', String(pm.response.json().claveActivacion));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "11 - Activacion B",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveB}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('activacion B responde 200', function () { pm.response.to.have.status(200); });"
+      ]}}]
+    },
+    {
+      "name": "12 - Lectura valida B",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 4000.000,\n  \"densidad\": 0.54,\n  \"temperaturaC\": 18.5,\n  \"caudalKgH\": 3000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('lectura B aceptada', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().aceptada).to.eql(true); });"
+      ]}}]
+    },
+    {
+      "name": "13 - Cierre B",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "cierre"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('cierre B responde 200 con estado 3', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().estado).to.eql(3);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "14 - Pesaje final B (deja B en estado 4)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": 16000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "pesaje-final"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('pesaje final B responde 200', function () { pm.response.to.have.status(200); });"
+      ]}}]
+    },
+    {
+      "name": "15 - Avanzar D: tara+activacion+lectura (deja D en estado 2, sin cerrar)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberD}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberD}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('tara D responde 200', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.collectionVariables.set('claveD', String(pm.response.json().claveActivacion));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "16 - Activacion D",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveD}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberD}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberD}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('activacion D responde 200', function () { pm.response.to.have.status(200); });"
+      ]}}]
+    },
+    {
+      "name": "17 - Lectura valida D (D queda en estado 2, sin cerrar)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 4000.000,\n  \"densidad\": 0.54,\n  \"temperaturaC\": 18.5,\n  \"caudalKgH\": 3000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberD}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberD}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('lectura D aceptada', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().aceptada).to.eql(true); });"
+      ]}}]
+    },
+    {
+      "name": "18 - registrarTara sobre A (estado 3) -> 409",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "tara"] },
+        "description": "Salto/retroceso: tara sobre una orden ya en estado 3 (cerrada). Esperado 409 por estado incompatible, sin devInfo con detalle interno."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: no esta en estado 1 (actual 3)', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 1');",
+        "    pm.expect(body.message).to.include('estado actual: 3');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "19 - registrarTara sobre B (estado 4) -> 409",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "tara"] },
+        "description": "Salto/retroceso: tara sobre una orden ya en estado 4 (finalizada)."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: no esta en estado 1 (actual 4)', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 1');",
+        "    pm.expect(body.message).to.include('estado actual: 4');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "20 - activar sobre A (estado 3) -> 409",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": 10000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] },
+        "description": "Salto/retroceso: activacion sobre una orden ya en estado 3."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: no esta en estado 2 (actual 3)', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 2');",
+        "    pm.expect(body.message).to.include('estado actual: 3');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "21 - activar sobre B (estado 4) -> 409",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": 10000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "activacion"] },
+        "description": "Salto/retroceso: activacion sobre una orden ya en estado 4."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: no esta en estado 2 (actual 4)', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 2');",
+        "    pm.expect(body.message).to.include('estado actual: 4');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "22 - registrarLectura sobre C (estado 1) -> 409",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 100.000,\n  \"densidad\": 0.5,\n  \"temperaturaC\": 20.0,\n  \"caudalKgH\": 1000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberC}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberC}}", "lecturas"] },
+        "description": "Salto/retroceso no cubierto antes: lectura sobre una orden en estado 1 (nunca recibio tara). La unica prueba previa de lectura antes de activar usaba una orden ya en estado 2 (con tara), no en estado 1 - mensaje distinto esperado ('no esta en estado 2', no 'todavia no fue activada')."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: no esta en estado 2 (actual 1)', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 2');",
+        "    pm.expect(body.message).to.include('estado actual: 1');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "23 - registrarLectura sobre B (estado 4) -> 409",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 100.000,\n  \"densidad\": 0.5,\n  \"temperaturaC\": 20.0,\n  \"caudalKgH\": 1000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "lecturas"] },
+        "description": "Salto/retroceso: lectura sobre una orden ya en estado 4 (finalizada)."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: no esta en estado 2 (actual 4)', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 2');",
+        "    pm.expect(body.message).to.include('estado actual: 4');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "24 - cerrarCarga sobre B (estado 4) -> 409",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "cierre"] },
+        "description": "Salto/retroceso: cierre sobre una orden ya en estado 4 (finalizada), no solo repetido inmediatamente desde estado 3 como en la coleccion de TP15."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: no esta en estado 2 (actual 4)', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 2');",
+        "    pm.expect(body.message).to.include('estado actual: 4');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "25 - registrarPesajeFinal sobre D (estado 2) -> 409",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": 16000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberD}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberD}}", "pesaje-final"] },
+        "description": "Salto/retroceso: pesaje final sobre una orden en estado 2 (con tara/activacion/lectura, pero sin cerrar). La unica prueba previa de pesaje final en estado incompatible usaba una orden en estado 1."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: no esta en estado 3 (actual 2)', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 3');",
+        "    pm.expect(body.message).to.include('estado actual: 2');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    }
+  ]
+}

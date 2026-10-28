@@ -1,0 +1,374 @@
+{
+  "info": {
+    "name": "iw3 - F3 Tara y activacion",
+    "description": "Coleccion versionable para la primera unidad de F3 (tara/clave de activacion, transicion 1->2, y activacion idempotente). Cubre: login, creacion de ordenes de apoyo, tara valida, tara repetida (409), tara sobre orden inexistente (404), activacion antes de tara (409), clave incorrecta (400), clave fuera de rango/ausente (400 por validacion), activacion valida, reintento idempotente (misma fechaActivacion), clave incorrecta despues de activar, activacion sobre orden inexistente (404) y ambos endpoints sin token (401). No incluye credenciales reales: testUsername/testPassword/jwtToken quedan vacios en este archivo versionado y se completan por entorno/--env-var o en tiempo de ejecucion. El pre-request del primer item (01 - Login) se ejecuta una sola vez por corrida completa y siempre limpia jwtToken/claveA/claveIncorrectaA/fechaActivacionA1 y regenera los orderNumber/extSuffix desde la hora actual, sin depender de ningun flag persistente — asi una corrida nueva no reutiliza por accidente valores (incluida una clave de activacion) que la aplicacion de Postman pudiera haber conservado de una corrida anterior. No ejercita las carreras concurrentes (dos taras o dos activaciones simultaneas sobre la misma orden): esa verificacion se hizo con curl en paralelo durante la implementacion, no es practica de expresar con el runner secuencial de Postman (ver docs/decisiones.md, seccion F3).\n\nLimite deliberado: igual que la coleccion de F2, estas pruebas solo verifican lo que la respuesta HTTP expone. No leen la base para confirmar ausencia de cambios en los rechazos; esa verificacion (revision de codigo + que una request rechazada no deja la orden en condiciones de aceptar una request que antes fallaba) se describe en docs/decisiones.md, seccion F3.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "testUsername", "value": "", "type": "string", "description": "Usuario de prueba de F1 (no es secreto por si solo). Definir por entorno/--env-var." },
+    { "key": "testPassword", "value": "", "type": "string", "description": "NUNCA versionar un valor real acá. Pasar por --env-var testPassword=..." },
+    { "key": "jwtToken", "value": "", "type": "string", "description": "Se completa en tiempo de ejecucion con la respuesta de Login." },
+    { "key": "orderNumberA", "value": "", "type": "string", "description": "Orden para el flujo completo tara->activacion." },
+    { "key": "orderNumberB", "value": "", "type": "string", "description": "Orden para probar activacion antes de registrar tara." },
+    { "key": "orderNumberNoExist", "value": "", "type": "string", "description": "orderNumber que nunca se crea en esta corrida." },
+    { "key": "extSuffix", "value": "", "type": "string" },
+    { "key": "claveA", "value": "", "type": "string", "description": "Se completa con la respuesta de la tara de la orden A. No se imprime en ningun test ni reporte." },
+    { "key": "claveIncorrectaA", "value": "", "type": "string" },
+    { "key": "fechaActivacionA1", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "username", "value": "{{testUsername}}", "type": "text" },
+            { "key": "password", "value": "{{testPassword}}", "type": "text" }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "login"] }
+      },
+      "event": [{
+        "listen": "prerequest",
+        "script": { "type": "text/javascript", "exec": [
+          "// Se ejecuta una sola vez por corrida completa, porque este es siempre el primer request.",
+          "// No depende de ningun flag persistente: siempre limpia y regenera, incluso si la",
+          "// coleccion ya traia variables de una corrida anterior guardadas por la app de Postman.",
+          "pm.collectionVariables.set('jwtToken', '');",
+          "pm.collectionVariables.set('claveA', '');",
+          "pm.collectionVariables.set('claveIncorrectaA', '');",
+          "pm.collectionVariables.set('fechaActivacionA1', '');",
+          "",
+          "// Milisegundos (acotados con modulo para no exceder Integer de Java,",
+          "// orderNumber es Integer) en vez de segundos: dos corridas completas",
+          "// lanzadas una detras de otra en el mismo proceso (ej. --iteration-count)",
+          "// pueden caer en el mismo segundo y chocarian con un timestamp de",
+          "// resolucion de segundo; en milisegundos la probabilidad de colision",
+          "// entre dos corridas consecutivas es despreciable.",
+          "var base = Date.now() % 2000000000;",
+          "pm.collectionVariables.set('orderNumberA', String(base));",
+          "pm.collectionVariables.set('orderNumberB', String(base + 1));",
+          "pm.collectionVariables.set('orderNumberNoExist', String(base + 500000));",
+          "pm.collectionVariables.set('extSuffix', String(base));"
+        ]}
+      }, {
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('login responde 200', function () { pm.response.to.have.status(200); });",
+          "pm.test('el cuerpo tiene forma de JWT', function () {",
+          "    var token = pm.response.text();",
+          "    pm.expect(token.split('.').length).to.eql(3);",
+          "    pm.collectionVariables.set('jwtToken', token);",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Crear orden A (para tara/activacion)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberA}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-F3-{{extSuffix}}-A\",\n    \"patente\": \"F3A001A\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-F3-{{extSuffix}}-A\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"F3A\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-F3-{{extSuffix}}-A\",\n    \"razonSocial\": \"Cliente F3 A\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-F3-{{extSuffix}}-A\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden A creada en estado 1 (201)', function () {",
+        "    pm.response.to.have.status(201);",
+        "    pm.expect(pm.response.json().estado).to.eql(1);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "03 - Crear orden B (para activacion antes de tara)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberB}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 7000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-F3-{{extSuffix}}-B\",\n    \"patente\": \"F3B001B\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-F3-{{extSuffix}}-B\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"F3B\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-F3-{{extSuffix}}-B\",\n    \"razonSocial\": \"Cliente F3 B\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-F3-{{extSuffix}}-B\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden B creada en estado 1 (201)', function () {",
+        "    pm.response.to.have.status(201);",
+        "    pm.expect(pm.response.json().estado).to.eql(1);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "04 - Activacion antes de registrar tara (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": 10000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "activacion"] },
+        "description": "La orden B sigue en estado 1 (nunca se le registro tara): debe rechazarse por estado, no por clave."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409 por estado incompatible', function () {",
+        "    pm.response.to.have.status(409);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.include('no esta en estado 2');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "05 - Tara sobre orden inexistente (404)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 10000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberNoExist}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberNoExist}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 404', function () {",
+        "    pm.response.to.have.status(404);",
+        "    pm.expect(pm.response.json().devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "06 - Tara valida sobre A (200, estado 1 -> 2)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('tara valida responde 200 con estado 2', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.estado).to.eql(2);",
+        "    pm.expect(body.claveActivacion).to.be.a('number');",
+        "    pm.expect(body.claveActivacion).to.be.at.least(10000).and.at.most(99999);",
+        "    pm.collectionVariables.set('claveA', String(body.claveActivacion));",
+        "    pm.collectionVariables.set('claveIncorrectaA', String(((body.claveActivacion - 10000 + 1) % 90000) + 10000));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "07 - Tara repetida sobre A (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "tara"] },
+        "description": "La orden A ya esta en estado 2 por la request anterior: debe rechazarse sin regenerar la clave."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409 por estado incompatible', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('no esta en estado 1');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "08 - Activacion con clave incorrecta (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveIncorrectaA}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('clave incorrecta responde 400', function () {",
+        "    pm.response.to.have.status(400);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.message).to.eql('Clave de activacion incorrecta');",
+        "    pm.expect(body.devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "09 - Clave fuera de rango (400 por validacion)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": 99\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 400 por rango invalido', function () {",
+        "    pm.response.to.have.status(400);",
+        "    pm.expect(pm.response.json().message).to.include('clave');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "10 - Clave ausente (400 por validacion)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 400 por clave ausente', function () {",
+        "    pm.response.to.have.status(400);",
+        "    pm.expect(pm.response.json().message).to.include('clave');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "11 - Activacion sobre orden inexistente (404)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": 10000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberNoExist}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberNoExist}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 404', function () {",
+        "    pm.response.to.have.status(404);",
+        "    pm.expect(pm.response.json().devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "12 - Activacion valida sobre A (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveA}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('clave correcta responde 200 con orderNumber, preset y fechaActivacion', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.orderNumber).to.eql(parseInt(pm.collectionVariables.get('orderNumberA'), 10));",
+        "    pm.expect(body.presetKg).to.eql(8000);",
+        "    pm.expect(body.fechaActivacion).to.be.a('string').and.to.have.length.above(0);",
+        "    pm.collectionVariables.set('fechaActivacionA1', body.fechaActivacion);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "13 - Reintento de activacion valida (idempotente, misma fecha)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveA}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] },
+        "description": "Misma clave correcta, orden ya activada: debe devolver exactamente la misma fechaActivacion de la request anterior, no una nueva."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('reintento responde 200 con el mismo orderNumber, preset y fechaActivacion', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.orderNumber).to.eql(parseInt(pm.collectionVariables.get('orderNumberA'), 10));",
+        "    pm.expect(body.presetKg).to.eql(8000);",
+        "    pm.expect(body.fechaActivacion).to.eql(pm.collectionVariables.get('fechaActivacionA1'));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "14 - Clave incorrecta despues de activacion correcta (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveIncorrectaA}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] },
+        "description": "La orden ya fue activada con la clave correcta; la clave sigue validandose igual (no hay un atajo que la omita)."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('sigue respondiendo 400 con clave incorrecta', function () {",
+        "    pm.response.to.have.status(400);",
+        "    pm.expect(pm.response.json().message).to.eql('Clave de activacion incorrecta');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "15 - Tara sin token (401)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 10000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('sin token responde 401', function () { pm.response.to.have.status(401); });",
+        "pm.test('cuerpo vacio (no pasa por StandartResponse)', function () {",
+        "    pm.expect(pm.response.text()).to.have.lengthOf(0);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "16 - Activacion sin token (401)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": 10000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('sin token responde 401', function () { pm.response.to.have.status(401); });",
+        "pm.test('cuerpo vacio (no pasa por StandartResponse)', function () {",
+        "    pm.expect(pm.response.text()).to.have.lengthOf(0);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "17 - Tara valida sobre B (confirma que seguia en estado 1 tras los rechazos)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 10500.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "tara"] },
+        "description": "B solo tuvo intentos rechazados antes (activacion antes de tara, sin token). Que esta tara responda 200 confirma que B seguia en estado 1 (si hubiera quedado en otro estado, el negocio la rechazaria con 409). Esto no demuestra la ausencia de cualquier otro efecto lateral posible de esos rechazos, solo el estado de la orden."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('B responde 200: confirma que seguia en estado 1 antes de esta tara', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().estado).to.eql(2);",
+        "});"
+      ]}}]
+    }
+  ]
+}

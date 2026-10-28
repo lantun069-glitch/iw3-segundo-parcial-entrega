@@ -1,0 +1,10 @@
+/.metadata/
+
+# Local environment files (real secrets live here, never commit them)
+.env
+.env.*
+!.env.example
+
+# Entornos locales de Postman con credenciales reales (real secrets live here, never commit them)
+postman/*.postman_environment.json
+!postman/*.postman_environment.example.json

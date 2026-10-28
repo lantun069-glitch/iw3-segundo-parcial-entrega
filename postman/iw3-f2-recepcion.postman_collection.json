@@ -1,0 +1,254 @@
+{
+  "info": {
+    "name": "iw3 - F2 Recepcion de ordenes",
+    "description": "Coleccion versionable para la unidad vertical de F2 (recepcion autenticada de una orden). Cubre: login, recepcion valida, segunda orden reutilizando referencias existentes, duplicado de orderNumber, entrada invalida y solicitud sin token. No incluye credenciales reales: testUsername/testPassword se pasan por entorno o --env-var al ejecutar. Los datos de orderNumber/externalCode se generan en tiempo de ejecucion (timestamp) para no chocar con ejecuciones anteriores.\n\nLimite deliberado: las pruebas de esta coleccion solo verifican lo que la respuesta HTTP expone (status code y cuerpo JSON). No afirman que un dato haya cambiado en la base (por ejemplo, que la sincronizacion de camion/chofer/cliente/producto se persistio) porque esta API no expone un endpoint de consulta para esas entidades; esa verificacion se hizo por fuera, contra la base, durante la implementacion (ver docs/decisiones.md, seccion F2).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "testUsername", "value": "", "type": "string", "description": "Usuario de prueba de F1 (no es secreto por si solo). Definir por entorno/--env-var, no dejar valor real en este archivo." },
+    { "key": "testPassword", "value": "", "type": "string", "description": "NUNCA versionar un valor real acá. Pasar por --env-var testPassword=... o por un archivo de entorno local no versionado." },
+    { "key": "jwtToken", "value": "", "type": "string", "description": "Se completa en tiempo de ejecucion con la respuesta de Login. No se imprime ni se guarda en ningun archivo versionado." },
+    { "key": "runInitialized", "value": "", "type": "string" },
+    { "key": "orderNumber1", "value": "", "type": "string" },
+    { "key": "orderNumber2", "value": "", "type": "string" },
+    { "key": "orderNumberInvalid", "value": "", "type": "string" },
+    { "key": "extSuffix", "value": "", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('runInitialized')) {",
+          "    var seconds = Math.floor(Date.now() / 1000);",
+          "    pm.collectionVariables.set('orderNumber1', String(seconds));",
+          "    pm.collectionVariables.set('orderNumber2', String(seconds + 1));",
+          "    pm.collectionVariables.set('orderNumberInvalid', String(seconds + 2));",
+          "    pm.collectionVariables.set('extSuffix', String(seconds));",
+          "    pm.collectionVariables.set('runInitialized', 'true');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "username", "value": "{{testUsername}}", "type": "text" },
+            { "key": "password", "value": "{{testPassword}}", "type": "text" }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "login"] },
+        "description": "Login existente (AuthRestController), parametros de formulario, no JSON. Devuelve el JWT como texto plano."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('login responde 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('el cuerpo tiene forma de JWT (3 segmentos)', function () {",
+              "    var token = pm.response.text();",
+              "    pm.expect(token).to.be.a('string');",
+              "    pm.expect(token.split('.').length).to.eql(3);",
+              "    pm.collectionVariables.set('jwtToken', token);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Recepcion valida",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderNumber\": {{orderNumber1}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-PM-{{extSuffix}}\",\n    \"patente\": \"PM001PM\",\n    \"descripcion\": \"Camion de prueba Postman\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-PM-{{extSuffix}}\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"Tester\",\n    \"documento\": \"10000000\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-PM-{{extSuffix}}\",\n    \"razonSocial\": \"Cliente Postman S.A.\",\n    \"contacto\": \"postman@example.invalid\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-PM-{{extSuffix}}\",\n    \"nombre\": \"GLP Postman\",\n    \"descripcion\": \"Producto de prueba\"\n  }\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+        "description": "Creacion valida con referencias nuevas (externalCode con sufijo de timestamp, para no chocar con ejecuciones anteriores)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('recepcion valida responde 201', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "var body;",
+              "pm.test('el cuerpo tiene los campos esperados', function () {",
+              "    body = pm.response.json();",
+              "    pm.expect(body.id).to.be.a('number');",
+              "    pm.expect(body.orderNumber).to.eql(parseInt(pm.collectionVariables.get('orderNumber1'), 10));",
+              "    pm.expect(body.estado).to.eql(1);",
+              "    pm.expect(body.fechaRecepcion).to.be.a('string').and.to.have.length.above(0);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Segunda orden reutilizando referencias existentes",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderNumber\": {{orderNumber2}},\n  \"fechaCargaPrevista\": \"2026-11-06T10:30:00\",\n  \"presetKg\": 9500.250,\n  \"camion\": {\n    \"externalCode\": \"CAM-PM-{{extSuffix}}\",\n    \"patente\": \"PM002PM\",\n    \"descripcion\": \"Camion de prueba Postman (actualizado)\",\n    \"capacidadKg\": 9500.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-PM-{{extSuffix}}\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"Tester2\",\n    \"documento\": \"10000001\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-PM-{{extSuffix}}\",\n    \"razonSocial\": \"Cliente Postman S.A. (actualizado)\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-PM-{{extSuffix}}\",\n    \"nombre\": \"GLP Postman\"\n  }\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+        "description": "Mismos externalCode que la request anterior (misma camion/chofer/cliente/producto), con orderNumber distinto y algunos campos opcionales omitidos. Verifica solo que la API acepta la operacion (201); no verifica por HTTP que los datos se hayan sincronizado en la base, porque no hay endpoint de consulta para esas entidades (ver docs/decisiones.md, seccion F2, para la verificacion hecha contra la base durante la implementacion)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('segunda orden con referencias reutilizadas responde 201', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test('el cuerpo refleja el nuevo orderNumber y estado 1', function () {",
+              "    var body = pm.response.json();",
+              "    pm.expect(body.orderNumber).to.eql(parseInt(pm.collectionVariables.get('orderNumber2'), 10));",
+              "    pm.expect(body.estado).to.eql(1);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Duplicado de orderNumber",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderNumber\": {{orderNumber1}},\n  \"fechaCargaPrevista\": \"2026-11-07T11:00:00\",\n  \"presetKg\": 1234.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-PM-DUP-{{extSuffix}}\",\n    \"patente\": \"DUP999DU\",\n    \"capacidadKg\": 1000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-PM-DUP-{{extSuffix}}\",\n    \"nombre\": \"Duplicado\",\n    \"apellido\": \"Intento\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-PM-DUP-{{extSuffix}}\",\n    \"razonSocial\": \"Cliente Duplicado\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-PM-DUP-{{extSuffix}}\",\n    \"nombre\": \"Producto Duplicado\"\n  }\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+        "description": "Reutiliza el orderNumber de la request 02 (ya existente), con referencias totalmente distintas y nuevas. Debe rechazarse con 409 sin tocar las referencias de la request 02."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('orderNumber duplicado responde 409', function () {",
+              "    pm.response.to.have.status(409);",
+              "});",
+              "",
+              "pm.test('el mensaje identifica el orderNumber duplicado y no expone detalle interno', function () {",
+              "    var body = pm.response.json();",
+              "    var expectedOrderNumber = pm.collectionVariables.get('orderNumber1');",
+              "    pm.expect(body.message).to.eql('Ya existe una orden con orderNumber=' + expectedOrderNumber);",
+              "    pm.expect(body.code).to.eql(409);",
+              "    pm.expect(body.devInfo).to.eql('No stack trace');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Entrada invalida (campo obligatorio ausente)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderNumber\": {{orderNumberInvalid}},\n  \"fechaCargaPrevista\": \"2026-11-08T12:00:00\",\n  \"presetKg\": 1000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-PM-INV-{{extSuffix}}\",\n    \"capacidadKg\": 1000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-PM-INV-{{extSuffix}}\",\n    \"nombre\": \"Invalido\",\n    \"apellido\": \"Prueba\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-PM-INV-{{extSuffix}}\",\n    \"razonSocial\": \"Cliente Invalido\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-PM-INV-{{extSuffix}}\",\n    \"nombre\": \"Producto Invalido\"\n  }\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+        "description": "Omite camion.patente (obligatorio). Debe rechazarse con 400 antes de persistir nada."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('entrada invalida responde 400', function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "",
+              "pm.test('el mensaje identifica el campo rechazado y no expone detalle interno', function () {",
+              "    var body = pm.response.json();",
+              "    pm.expect(body.message).to.include('camion.patente');",
+              "    pm.expect(body.code).to.eql(400);",
+              "    pm.expect(body.devInfo).to.eql('No stack trace');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Sin token",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderNumber\": {{orderNumberInvalid}},\n  \"fechaCargaPrevista\": \"2026-11-08T12:00:00\",\n  \"presetKg\": 1000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-PM-NOAUTH-{{extSuffix}}\",\n    \"patente\": \"NA001NA\",\n    \"capacidadKg\": 1000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-PM-NOAUTH-{{extSuffix}}\",\n    \"nombre\": \"Sin\",\n    \"apellido\": \"Token\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-PM-NOAUTH-{{extSuffix}}\",\n    \"razonSocial\": \"Cliente Sin Token\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-PM-NOAUTH-{{extSuffix}}\",\n    \"nombre\": \"Producto Sin Token\"\n  }\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+        "description": "Sin header Authorization. Debe rechazarse con 401, respuesta estandar de Spring Security (sin cuerpo JSON, no pasa por StandartResponse)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('sin token responde 401', function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "",
+              "pm.test('el cuerpo esta vacio (no pasa por StandartResponse)', function () {",
+              "    pm.expect(pm.response.text()).to.have.lengthOf(0);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

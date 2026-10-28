@@ -1,0 +1,17 @@
+name: iw3-local
+
+services:
+  mysql:
+    image: mysql:8.0.43
+    ports:
+      - "127.0.0.1:3306:3306"
+    environment:
+      MYSQL_DATABASE: iw3_2026
+      MYSQL_USER: ${DB_USERNAME:?Falta DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Falta MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  mysql-data:

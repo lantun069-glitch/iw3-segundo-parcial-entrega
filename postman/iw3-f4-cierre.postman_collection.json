@@ -1,0 +1,277 @@
+{
+  "info": {
+    "name": "iw3 - F4 Cierre explicito (2->3)",
+    "description": "Coleccion versionable para TP15 (cierre explicito 2->3, F4). Cubre: login, creacion de ordenes de apoyo, cierre sobre orden inexistente (404), cierre en estado 1 (409), cierre en estado 2 sin activar (409), cierre activado pero sin lecturas aceptadas (409), cierre valido (200, fechaFinCarga = fechaUltimaLectura), cierre repetido (409, cubre tambien la idea de 'cierre duplicado'), lectura enviada despues del cierre (409, confirma que queda bloqueada) y cierre sin token (401). No cubre pesaje final ni conciliacion (TP16-TP18, todavia no implementados): no hay items para esos endpoints en esta coleccion. No incluye credenciales reales: testUsername/testPassword/jwtToken quedan vacios en este archivo versionado y se completan por entorno/--env-var o en tiempo de ejecucion. El pre-request del primer item (01 - Login) limpia y regenera orderNumber/extSuffix desde la hora actual, mismo criterio que las colecciones de F2/F3.\n\nCarreras de concurrencia (cierre/cierre y cierre/lectura simultaneos sobre la misma orden): **no se ejercitan aqui**, mismo motivo que F3 (el runner de Postman es secuencial, no es practico expresar dos requests verdaderamente simultaneas). Se probaron con curl en paralelo durante la implementacion: ver docs/contrato-f4-cierre.md.\n\nLimite deliberado: igual que las colecciones anteriores, estas pruebas solo verifican lo que la respuesta HTTP expone. No leen la base de datos para confirmar HistorialEstado o la ausencia de cambios tras un rechazo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "testUsername", "value": "", "type": "string", "description": "Usuario de prueba de F1 (no es secreto por si solo). Definir por entorno/--env-var." },
+    { "key": "testPassword", "value": "", "type": "string", "description": "NUNCA versionar un valor real acá. Pasar por --env-var testPassword=..." },
+    { "key": "jwtToken", "value": "", "type": "string", "description": "Se completa en tiempo de ejecucion con la respuesta de Login." },
+    { "key": "orderNumberA", "value": "", "type": "string", "description": "Orden para el flujo completo tara->activacion->lectura->cierre." },
+    { "key": "orderNumberB", "value": "", "type": "string", "description": "Orden para probar cierre en estado 1 (sin tara)." },
+    { "key": "orderNumberNoExist", "value": "", "type": "string", "description": "orderNumber que nunca se crea en esta corrida." },
+    { "key": "extSuffix", "value": "", "type": "string" },
+    { "key": "claveA", "value": "", "type": "string", "description": "Se completa con la respuesta de la tara de la orden A." },
+    { "key": "fechaUltimaLecturaA", "value": "", "type": "string", "description": "Se completa con la respuesta de la lectura valida de A; debe coincidir con fechaFinCarga del cierre." }
+  ],
+  "item": [
+    {
+      "name": "01 - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "username", "value": "{{testUsername}}", "type": "text" },
+            { "key": "password", "value": "{{testPassword}}", "type": "text" }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "login"] }
+      },
+      "event": [{
+        "listen": "prerequest",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.collectionVariables.set('jwtToken', '');",
+          "pm.collectionVariables.set('claveA', '');",
+          "pm.collectionVariables.set('fechaUltimaLecturaA', '');",
+          "",
+          "var base = Date.now() % 2000000000;",
+          "pm.collectionVariables.set('orderNumberA', String(base));",
+          "pm.collectionVariables.set('orderNumberB', String(base + 1));",
+          "pm.collectionVariables.set('orderNumberNoExist', String(base + 500000));",
+          "pm.collectionVariables.set('extSuffix', String(base));"
+        ]}
+      }, {
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('login responde 200', function () { pm.response.to.have.status(200); });",
+          "pm.test('el cuerpo tiene forma de JWT', function () {",
+          "    var token = pm.response.text();",
+          "    pm.expect(token.split('.').length).to.eql(3);",
+          "    pm.collectionVariables.set('jwtToken', token);",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Crear orden A (flujo completo)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberA}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-F4-{{extSuffix}}-A\",\n    \"patente\": \"F4A001A\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-F4-{{extSuffix}}-A\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"F4A\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-F4-{{extSuffix}}-A\",\n    \"razonSocial\": \"Cliente F4 A\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-F4-{{extSuffix}}-A\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden A creada en estado 1 (201)', function () {",
+        "    pm.response.to.have.status(201);",
+        "    pm.expect(pm.response.json().estado).to.eql(1);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "03 - Crear orden B (para cierre en estado 1)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberB}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 7000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-F4-{{extSuffix}}-B\",\n    \"patente\": \"F4B001B\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-F4-{{extSuffix}}-B\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"F4B\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-F4-{{extSuffix}}-B\",\n    \"razonSocial\": \"Cliente F4 B\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-F4-{{extSuffix}}-B\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden B creada en estado 1 (201)', function () {",
+        "    pm.response.to.have.status(201);",
+        "    pm.expect(pm.response.json().estado).to.eql(1);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "04 - Cierre sobre orden inexistente (404)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberNoExist}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberNoExist}}", "cierre"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 404', function () {",
+        "    pm.response.to.have.status(404);",
+        "    pm.expect(pm.response.json().devInfo).to.eql('No stack trace');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "05 - Cierre sobre B en estado 1 (409)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "cierre"] },
+        "description": "B nunca recibio tara: sigue en estado 1."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409 por estado incompatible', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('no esta en estado 2');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "06 - Tara valida sobre A (200, estado 1 -> 2)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('tara valida responde 200 con estado 2', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.estado).to.eql(2);",
+        "    pm.collectionVariables.set('claveA', String(body.claveActivacion));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "07 - Cierre sobre A en estado 2 sin activar (409)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "cierre"] },
+        "description": "A ya tiene tara pero no fue activada: precondicion adicional de decision del equipo."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409 por falta de activacion', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('todavia no fue activada');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "08 - Activacion valida sobre A (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveA}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('clave correcta responde 200', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().presetKg).to.eql(8000);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "09 - Cierre sobre A activada pero sin lecturas (409)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "cierre"] },
+        "description": "A ya esta activada pero todavia no recibio ninguna lectura aceptada."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409 por falta de lecturas aceptadas', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('no tiene lecturas aceptadas');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "10 - Lectura valida sobre A (200, aceptada)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 4000.000,\n  \"densidad\": 0.54,\n  \"temperaturaC\": 18.5,\n  \"caudalKgH\": 3000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('lectura aceptada', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.aceptada).to.eql(true);",
+        "    pm.collectionVariables.set('fechaUltimaLecturaA', body.fechaUltimaLectura);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "11 - Cierre valido sobre A (200, estado 2 -> 3)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "cierre"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('cierre valido responde 200 con estado 3 y fechaFinCarga = fechaUltimaLectura', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.orderNumber).to.eql(parseInt(pm.collectionVariables.get('orderNumberA'), 10));",
+        "    pm.expect(body.estado).to.eql(3);",
+        "    pm.expect(body.fechaFinCarga).to.eql(pm.collectionVariables.get('fechaUltimaLecturaA'));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "12 - Cierre repetido sobre A (409)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "cierre"] },
+        "description": "A ya quedo en estado 3 por el item anterior."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: ya no esta en estado 2', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('estado actual: 3');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "13 - Lectura enviada despues del cierre sobre A (409, bloqueada)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 5000.000,\n  \"densidad\": 0.54,\n  \"temperaturaC\": 18.5,\n  \"caudalKgH\": 3000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] },
+        "description": "Confirma TP15: una lectura despues del cierre se rechaza, no modifica snapshot ni detalle."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409: la orden ya no esta en estado 2', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('estado actual: 3');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "14 - Cierre sin token (401)",
+      "request": {
+        "method": "POST",
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "cierre"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('sin token responde 401', function () { pm.response.to.have.status(401); });",
+        "pm.test('cuerpo vacio (no pasa por StandartResponse)', function () {",
+        "    pm.expect(pm.response.text()).to.have.lengthOf(0);",
+        "});"
+      ]}}]
+    }
+  ]
+}

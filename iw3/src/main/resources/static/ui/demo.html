@@ -1,0 +1,114 @@
+<html>
+
+<head>
+	<title>Graph WebSocket</title>
+	<script src="js/sockjs.min.js"></script>
+	<script src="js/stomp.js"></script>
+	<script src="js/Chart.bundle.min.js"></script>
+	<script type="text/javascript">
+		let stompClient = null;
+
+		let myChart;
+
+
+		let token = "";
+		function login() {
+			const username = document.getElementById('username').value;
+			const password = document.getElementById('password').value;
+			const data = new FormData();
+			data.append("username", username);
+			data.append("password", password);
+
+			const xhr = new XMLHttpRequest();
+			xhr.withCredentials = true;
+
+			xhr.addEventListener("readystatechange", function () {
+				if (this.readyState === 4) {
+					token = this.responseText;
+					console.log(token)
+					document.getElementById('login').style.display = 'none';
+					document.getElementById('graph').style.display = 'block';
+					connect()
+				}
+			});
+
+			xhr.open("POST", "http://localhost:8080/api/v1/login");
+
+			xhr.send(data);
+		}
+
+		function disconnect() {
+			if (stompClient != null) {
+				stompClient.disconnect();
+			}
+			console.log("Disconnected");
+		}
+
+		function connect() {
+			let socket = new SockJS(`/graph?authtoken=${token}`);
+			stompClient = Stomp.over(socket);
+			stompClient.connect({}, function (frame) {
+				createChart();
+				console.log('Connected: ' + frame);
+				stompClient.subscribe('/topic/graph/data', function (message) {
+					console.log(message.body);
+					updateChart(JSON.parse(message.body));
+				});
+			});
+		}
+		function updateChart(data) {
+			let labels = [];
+			let values = [];
+			data.forEach(o => {
+				labels.push(o.label);
+				values.push(o.value);
+			});
+			myChart.data.labels = labels;
+			myChart.data.datasets[0].data = values;
+			myChart.update();
+		}
+
+		function createChart() {
+			let ctx = document.getElementById('myChart').getContext('2d');
+			myChart = new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: [],
+					datasets: [{
+						label: 'Costos',
+						data: [],
+						borderWidth: 1
+					}]
+				},
+				options: {
+					scales: {
+						yAxes: [{
+							ticks: {
+								beginAtZero: true
+							}
+						}]
+					}
+				}
+			});
+		}
+	</script>
+
+</head>
+
+<body onload="disconnect()">
+	<div>
+		<div id="login">
+			<p><input type="text" id="username" placeholder="username" /></p>
+			<p><input type="password" id="password" placeholder="password" /></p>
+			<button onclick="login();">Login</button><br />
+
+		</div>
+		<div id="graph" style="display: none;">
+			<div style="height: 600;width: 900px;">
+				<canvas id="myChart"></canvas>
+			</div>
+		</div>
+	</div>
+</body>
+
+</html>

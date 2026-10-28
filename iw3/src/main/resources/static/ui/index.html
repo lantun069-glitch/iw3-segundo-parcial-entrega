@@ -1,0 +1,109 @@
+<html>
+   <head>
+       <title>Chat WebSocket</title>
+       <script src="js/sockjs.min.js"></script>
+       <script src="js/stomp.js"></script>
+       <script type="text/javascript">
+           let stompClient = null;
+          
+           function setConnected(connected) {
+               document.getElementById('connect').disabled = connected;
+               document.getElementById('disconnect').disabled = !connected;
+               document.getElementById('conversationDiv').style.visibility
+                 = connected ? 'visible' : 'hidden';
+               document.getElementById('response').innerHTML = '';
+               document.getElementById('from').disabled = connected;
+           }
+          
+           function connect() {
+               let socket = new SockJS(`/chat?authtoken=${token}`);
+               stompClient = Stomp.over(socket); 
+               stompClient.connect({},function(frame) {
+                   setConnected(true);
+                   console.log('Connected: ' + frame);
+                   stompClient.subscribe('/topic/messages', function(messageOutput) {
+                       showMessageOutput(JSON.parse(messageOutput.body));
+                   });
+               });
+           }
+          
+           function disconnect() {
+               if(stompClient != null) {
+                   stompClient.disconnect();
+               }
+               setConnected(false);
+               console.log("Disconnected");
+           }
+          
+           function sendMessage() {
+               let from = document.getElementById('from').value;
+               let text = document.getElementById('text').value;
+               stompClient.send("/ws/chat", {},
+                 JSON.stringify({'from':from, 'text':text}));
+           }
+          
+           function showMessageOutput(messageOutput) {
+               let response = document.getElementById('response');
+               let p = document.createElement('p');
+               p.style.wordWrap = 'break-word';
+               p.appendChild(document.createTextNode(messageOutput.from + ": " + messageOutput.text + " (" + messageOutput.time + ")"));
+               response.appendChild(p);
+           }
+          
+           let token="";
+           function login() {
+				const username = document.getElementById('username').value;
+               const password = document.getElementById('password').value;
+               const data = new FormData();
+				data.append("username", username);
+				data.append("password", password);
+				const xhr = new XMLHttpRequest();
+				xhr.withCredentials = true;
+				
+				xhr.addEventListener("readystatechange", function() {
+				  if(this.readyState === 4) {
+				    token=this.responseText;
+				    console.log(token)
+				    document.getElementById('login').style.display = 'none';
+				    document.getElementById('chat').style.display = 'block';
+				  }
+				});
+				
+				xhr.open("POST", "http://localhost:8080/api/v1/login");
+				
+				xhr.send(data);
+			}
+       </script>
+   </head>
+   <body onload="disconnect()">
+       <div>
+			<div id="login">
+               <p><input type="text" id="username" placeholder="username"/></p>
+               <p><input type="password" id="password" placeholder="password"/></p>
+               <button onclick="login();">Login</button><br/>
+              
+           </div>
+          
+           <div style="display: none;" id="chat">
+				<h3>CHAT</h3>
+				<hr/>
+	            <div>
+	                Nickname: <input type="text" id="from" placeholder="Choose a nickname"/>
+	            </div>
+	            <br />
+	            <div>
+	                <button id="connect" onclick="connect();">Connect</button>
+	                <button id="disconnect" disabled="disabled" onclick="disconnect();">
+	                    Disconnect
+	                </button>
+	            </div>
+	            <br />
+	            <div id="conversationDiv">
+	                <input type="text" id="text" placeholder="Write a message..."/>
+	                <button id="sendMessage" onclick="sendMessage();">Send</button>
+	                <p id="response"></p>
+	            </div>
+           </div>
+       </div>
+   </body>
+</html>

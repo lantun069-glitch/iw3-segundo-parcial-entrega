@@ -1,0 +1,48 @@
+Procedencia de este contenido.
+
+El código parte del tag anotado `parcial-2-local-v1` (detalle del commit
+y origen más abajo); posteriormente se actualizó documentación, la guía
+de arranque local y comentarios del código (sin cambios de lógica), por
+lo que el contenido de este repositorio ya no es idéntico byte a byte a
+ese tag.
+
+Código base: tag anotado `parcial-2-local-v1` del repositorio BE
+(iw3-backend-sanitized).
+Commit: 45710e3fc44fdac84b5955147dd70bc69609e7d5
+  - Coincide exactamente con `main` y `origin/main` del repo BE al momento
+    de esa extracción.
+  - Mensaje: "docs(f5): decisión de equipo - integrar sin esperar VM,
+    despliegue pendiente"
+  - Mensaje del tag: "Segundo parcial - version funcional local
+    (circuito 1-5, API, OpenAPI, Postman)"
+
+Ese código se extrajo con `git archive parcial-2-local-v1` desde el
+repositorio local (sin checkout, sin tocar ramas, sin modificar el repo
+origen). No incluye develop ni ningún avance posterior (F6-F8, trabajo
+del final).
+
+Agregado después del tag, como commits regulares en el repositorio de
+entrega: la guía de arranque local paso a paso y el script auxiliar
+`tools/crear-usuario-local.sh` (alta de usuario de prueba sin exponer la
+contraseña), la documentación de despliegue verificado en la VM de la
+cátedra (`docs/despliegue-vm.md`), y comentarios aclaratorios en el
+código de negocio (sin cambios de lógica).
+
+Este repositorio es una exportación de ese estado aprobado (sin `.git`,
+sin archivos personales ni artefactos generados), con un único commit
+inicial.
+
+Base docente: https://github.com/magm3333/iw3_2026 (remoto `upstream` del
+repo BE original), commit b7e705de737e5b1039719807bb413ec89279e7d1
+("Backend completo"). Ver docs/fuentes.md y docs/decisiones.md para el
+detalle de saneamiento de credenciales heredadas y atribución.
+
+Frontend: NO incluido. Confirmado por docs/fuentes.md ("Sin interfaz
+gráficas... yo no quiero interfaz gráficas para el segundo parcial",
+cita textual de la consigna oficial). El estado del repositorio FE en ese momento
+(`iw3-frontend`, con solo `.gitignore`, sin scaffold) queda registrado en
+el respaldo, no en esta copia. El frontend actual (desarrollo F7/F8, rama
+develop) es trabajo del final, fuera de alcance de esta entrega.
+
+Base de datos MySQL: no incluida (fuera de alcance de este contenido,
+igual que en el resto del proyecto).

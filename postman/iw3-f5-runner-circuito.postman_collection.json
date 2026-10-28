@@ -1,0 +1,282 @@
+{
+  "info": {
+    "name": "iw3 - F5 Runner del circuito completo (TP22/TP25)",
+    "description": "Primera unidad de F5: runner que encadena el circuito completo de una orden (recepcion -> tara/activacion -> dos lecturas -> cierre -> pesaje final/conciliacion) sobre un unico orden por iteracion, sin intervencion manual entre pasos. Cubre TP22 (demostracion completa de los 5 puntos desde Postman, sin pantallas propias) y TP25 (runner que encadena orderNumber/clave/token automaticamente, sin depender de variables globales compartidas).\n\nPropagacion automatica: orderNumber y extSuffix se generan en el pre-request del primer item a partir de la hora actual y el numero de iteracion (para no colisionar entre corridas ni entre iteraciones de la misma corrida); claveActivacion se captura de la respuesta de tara y se reutiliza en activacion; jwtToken se captura de login y se reutiliza en el resto. Ninguno de los tres se imprime (sin console.log) ni se exporta a variables de entorno/globales: quedan unicamente en variables de COLECCION, igual criterio que las colecciones anteriores.\n\nCada item valida estado HTTP y contenido del cuerpo (no solo el status code). Si alguna validacion de un item falla, ese item llama a pm.execution.setNextRequest(null), lo que detiene el resto de la corrida (incluidas las iteraciones siguientes de --iteration-count): se evita que un paso roto (p. ej. una tara fallida sin clave capturada) produzca fallos en cascada en los pasos posteriores que dependen de sus datos.\n\nDatos distintos por iteracion (dataset por indice de pm.info.iteration, no por azar): iteracion 0 usa tara 12000.000/bruto 16080.000/masa final 4000.000 (diferencia esperada +80.000); iteracion 1 usa tara 10000.000/bruto 12900.000/masa final 3000.000 (diferencia esperada -100.000). La conciliacion de cada iteracion se compara contra ese valor esperado, no solo contra si el calculo 'da algun numero'.\n\nLimite deliberado, igual que las colecciones anteriores: solo verifica lo que la respuesta HTTP expone. No lee la base de datos. No reemplaza las colecciones de F2/F3/F4 (quedan intactas, sin revision integral en esta unidad) ni ejercita casos de error/validacion (eso ya esta cubierto alli): este runner es el camino feliz completo, de punta a punta.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "testUsername", "value": "", "type": "string", "description": "Usuario de prueba de F1 (no es secreto por si solo). Definir por entorno/--env-var." },
+    { "key": "testPassword", "value": "", "type": "string", "description": "NUNCA versionar un valor real acá. Pasar por --env-var testPassword=..." },
+    { "key": "jwtToken", "value": "", "type": "string" },
+    { "key": "orderNumber", "value": "", "type": "string" },
+    { "key": "extSuffix", "value": "", "type": "string" },
+    { "key": "claveActivacion", "value": "", "type": "string" },
+    { "key": "presetKg", "value": "9000.000", "type": "string" },
+    { "key": "taraKg", "value": "", "type": "string" },
+    { "key": "masa1", "value": "", "type": "string" },
+    { "key": "masa2", "value": "", "type": "string" },
+    { "key": "temp2", "value": "", "type": "string" },
+    { "key": "densidad2", "value": "", "type": "string" },
+    { "key": "caudal2", "value": "", "type": "string" },
+    { "key": "brutoKg", "value": "", "type": "string" },
+    { "key": "diferenciaEsperada", "value": "", "type": "string" },
+    { "key": "fechaUltimaLectura", "value": "", "type": "string" },
+    { "key": "conciliacionPost", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "username", "value": "{{testUsername}}", "type": "text" },
+            { "key": "password", "value": "{{testPassword}}", "type": "text" }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "login"] }
+      },
+      "event": [{
+        "listen": "prerequest",
+        "script": { "type": "text/javascript", "exec": [
+          "// Reinicializacion por iteracion (no solo por corrida): este item es",
+          "// siempre el primero de cada iteracion del runner, asi que su",
+          "// pre-request corre una vez por iteracion, no una sola vez por corrida.",
+          "pm.collectionVariables.set('jwtToken', '');",
+          "pm.collectionVariables.set('claveActivacion', '');",
+          "pm.collectionVariables.set('fechaUltimaLectura', '');",
+          "pm.collectionVariables.set('conciliacionPost', '');",
+          "",
+          "var iter = pm.info.iteration;",
+          "var base = Date.now() % 1000000000;",
+          "pm.collectionVariables.set('orderNumber', String(base + iter));",
+          "pm.collectionVariables.set('extSuffix', String(base + iter));",
+          "",
+          "var datasets = [",
+          "  { taraKg: '12000.000', masa1: '2000.000', masa2: '4000.000', temp2: '18.5', densidad2: '0.54', caudal2: '3000.000', brutoKg: '16080.000', diferenciaEsperada: '80.000' },",
+          "  { taraKg: '10000.000', masa1: '1500.000', masa2: '3000.000', temp2: '20.0', densidad2: '0.60', caudal2: '2500.000', brutoKg: '12900.000', diferenciaEsperada: '-100.000' }",
+          "];",
+          "var d = datasets[iter % datasets.length];",
+          "pm.collectionVariables.set('taraKg', d.taraKg);",
+          "pm.collectionVariables.set('masa1', d.masa1);",
+          "pm.collectionVariables.set('masa2', d.masa2);",
+          "pm.collectionVariables.set('temp2', d.temp2);",
+          "pm.collectionVariables.set('densidad2', d.densidad2);",
+          "pm.collectionVariables.set('caudal2', d.caudal2);",
+          "pm.collectionVariables.set('brutoKg', d.brutoKg);",
+          "pm.collectionVariables.set('diferenciaEsperada', d.diferenciaEsperada);"
+        ]}
+      }, {
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "var ok = true;",
+          "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+          "",
+          "check('login responde 200', pm.response.code === 200);",
+          "var token = pm.response.text();",
+          "check('el cuerpo tiene forma de JWT (3 segmentos)', token.split('.').length === 3);",
+          "if (ok) { pm.collectionVariables.set('jwtToken', token); }",
+          "",
+          "if (!ok) { pm.execution.setNextRequest(null); }"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Recepcion (estado 1)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumber}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": {{presetKg}},\n  \"camion\": {\n    \"externalCode\": \"CAM-F5R-{{extSuffix}}\",\n    \"patente\": \"F5R001A\",\n    \"capacidadKg\": 10000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-F5R-{{extSuffix}}\",\n    \"nombre\": \"Runner\",\n    \"apellido\": \"F5\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-F5R-{{extSuffix}}\",\n    \"razonSocial\": \"Cliente Runner F5\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-F5R-{{extSuffix}}\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "var ok = true;",
+        "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+        "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+        "",
+        "check('responde 201', pm.response.code === 201);",
+        "check('estado 1', body.estado === 1);",
+        "check('orderNumber correcto', body.orderNumber === parseInt(pm.collectionVariables.get('orderNumber'), 10));",
+        "",
+        "if (!ok) { pm.execution.setNextRequest(null); }"
+      ]}}]
+    },
+    {
+      "name": "03 - Tara (estado 1 -> 2)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": {{taraKg}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumber}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "var ok = true;",
+        "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+        "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+        "",
+        "check('responde 200', pm.response.code === 200);",
+        "check('estado 2', body.estado === 2);",
+        "check('taraKg coincide', body.taraKg === parseFloat(pm.collectionVariables.get('taraKg')));",
+        "check('claveActivacion en rango [10000,99999]', typeof body.claveActivacion === 'number' && body.claveActivacion >= 10000 && body.claveActivacion <= 99999);",
+        "if (ok) { pm.collectionVariables.set('claveActivacion', String(body.claveActivacion)); }",
+        "",
+        "if (!ok) { pm.execution.setNextRequest(null); }"
+      ]}}]
+    },
+    {
+      "name": "04 - Activacion",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveActivacion}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumber}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "var ok = true;",
+        "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+        "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+        "",
+        "check('responde 200', pm.response.code === 200);",
+        "check('orderNumber correcto', body.orderNumber === parseInt(pm.collectionVariables.get('orderNumber'), 10));",
+        "check('presetKg coincide', body.presetKg === parseFloat(pm.collectionVariables.get('presetKg')));",
+        "check('fechaActivacion presente', typeof body.fechaActivacion === 'string' && body.fechaActivacion.length > 0);",
+        "",
+        "if (!ok) { pm.execution.setNextRequest(null); }"
+      ]}}]
+    },
+    {
+      "name": "05 - Lectura 1 (aceptada)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": {{masa1}},\n  \"densidad\": 0.50,\n  \"temperaturaC\": 15.0,\n  \"caudalKgH\": 2800.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumber}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "var ok = true;",
+        "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+        "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+        "",
+        "check('responde 200', pm.response.code === 200);",
+        "check('lectura aceptada', body.aceptada === true);",
+        "check('masaAcumuladaKg coincide', body.masaAcumuladaKg === parseFloat(pm.collectionVariables.get('masa1')));",
+        "",
+        "if (!ok) { pm.execution.setNextRequest(null); }"
+      ]}}]
+    },
+    {
+      "name": "06 - Lectura 2 (aceptada, masa mayor)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": {{masa2}},\n  \"densidad\": {{densidad2}},\n  \"temperaturaC\": {{temp2}},\n  \"caudalKgH\": {{caudal2}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumber}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "var ok = true;",
+        "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+        "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+        "",
+        "check('responde 200', pm.response.code === 200);",
+        "check('lectura aceptada', body.aceptada === true);",
+        "check('masaAcumuladaKg coincide', body.masaAcumuladaKg === parseFloat(pm.collectionVariables.get('masa2')));",
+        "check('fechaUltimaLectura presente', typeof body.fechaUltimaLectura === 'string' && body.fechaUltimaLectura.length > 0);",
+        "if (ok) { pm.collectionVariables.set('fechaUltimaLectura', body.fechaUltimaLectura); }",
+        "",
+        "if (!ok) { pm.execution.setNextRequest(null); }"
+      ]}}]
+    },
+    {
+      "name": "07 - Cierre (estado 2 -> 3)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}/cierre", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumber}}", "cierre"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "var ok = true;",
+        "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+        "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+        "",
+        "check('responde 200', pm.response.code === 200);",
+        "check('estado 3', body.estado === 3);",
+        "check('fechaFinCarga == fechaUltimaLectura de la lectura 2', body.fechaFinCarga === pm.collectionVariables.get('fechaUltimaLectura'));",
+        "",
+        "if (!ok) { pm.execution.setNextRequest(null); }"
+      ]}}]
+    },
+    {
+      "name": "08 - Pesaje final (estado 3 -> 4, con conciliacion)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"pesoBrutoKg\": {{brutoKg}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}/pesaje-final", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumber}}", "pesaje-final"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "var ok = true;",
+        "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+        "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+        "",
+        "var tara = parseFloat(pm.collectionVariables.get('taraKg'));",
+        "var bruto = parseFloat(pm.collectionVariables.get('brutoKg'));",
+        "var masa2 = parseFloat(pm.collectionVariables.get('masa2'));",
+        "var netoEsperado = bruto - tara;",
+        "var diferenciaEsperada = parseFloat(pm.collectionVariables.get('diferenciaEsperada'));",
+        "",
+        "check('responde 200', pm.response.code === 200);",
+        "check('taraKg coincide', body.taraKg === tara);",
+        "check('pesoBrutoKg coincide', body.pesoBrutoKg === bruto);",
+        "check('netoKg == bruto - tara (valor esperado de esta iteracion)', body.netoKg === netoEsperado);",
+        "check('productoCargadoKg == ultima masa aceptada (lectura 2)', body.productoCargadoKg === masa2);",
+        "check('diferenciaKg == valor esperado de esta iteracion', body.diferenciaKg === diferenciaEsperada);",
+        "check('ultimaTemperaturaC coincide con lectura 2', body.ultimaTemperaturaC === parseFloat(pm.collectionVariables.get('temp2')));",
+        "check('ultimaDensidad coincide con lectura 2', body.ultimaDensidad === parseFloat(pm.collectionVariables.get('densidad2')));",
+        "check('ultimoCaudalKgH coincide con lectura 2', body.ultimoCaudalKgH === parseFloat(pm.collectionVariables.get('caudal2')));",
+        "if (ok) { pm.collectionVariables.set('conciliacionPost', JSON.stringify(body)); }",
+        "",
+        "if (!ok) { pm.execution.setNextRequest(null); }"
+      ]}}]
+    },
+    {
+      "name": "09 - Conciliacion (consulta posterior, debe coincidir con el pesaje final)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}/conciliacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumber}}", "conciliacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "var ok = true;",
+        "function check(desc, cond) { pm.test(desc, function () { pm.expect(cond).to.be.true; }); if (!cond) ok = false; }",
+        "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+        "var post = {}; try { post = JSON.parse(pm.collectionVariables.get('conciliacionPost')); } catch (e) {}",
+        "",
+        "check('responde 200', pm.response.code === 200);",
+        "check('conciliacion GET identica a la del POST de pesaje final', JSON.stringify(body) === JSON.stringify(post));",
+        "",
+        "if (!ok) { pm.execution.setNextRequest(null); }"
+      ]}}]
+    }
+  ]
+}

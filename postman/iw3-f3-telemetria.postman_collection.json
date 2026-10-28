@@ -1,0 +1,356 @@
+{
+  "info": {
+    "name": "iw3 - F3 Telemetria (lecturas)",
+    "description": "Coleccion versionable para la segunda unidad de F3 (telemetria: descarte, snapshot, fechaInicioCarga, histórico). Cubre: login, ordenes de apoyo (A activada, B solo con tara sin activar), lectura antes de activar (409), descarte antes del primer snapshot con campos null, los tres motivos de descarte y su prioridad, masa igual (aceptada), primera lectura aceptada fija fechaInicioCarga y una posterior la conserva, orden inexistente (404), campo ausente (400) y sin token (401). No incluye credenciales reales: testUsername/testPassword/jwtToken quedan vacios en este archivo y se completan por entorno/--env-var o en tiempo de ejecucion. El pre-request del primer item (01 - Login) limpia jwtToken y regenera los orderNumber de esta corrida en milisegundos (acotados para no exceder Integer), sin depender de ningun flag persistente - mismo criterio ya corregido en iw3-f3-tara-activacion.\n\nNo ejercita la carrera concurrente de dos lecturas con masas distintas (no es practico expresarla en el runner secuencial de Postman): se probo con curl en paralelo durante la implementacion (ver docs/decisiones.md, seccion F3 - segunda unidad). Tampoco verifica el histórico (DetalleCarga) ni la ausencia de escrituras de las lecturas descartadas: esta coleccion solo ve lo que la respuesta HTTP expone, y esta unidad no agrega un endpoint de consulta del histórico; esa verificacion requiere leer la base directamente (ver el límite documentado en docs/decisiones.md).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "testUsername", "value": "", "type": "string", "description": "Usuario de prueba de F1 (no es secreto por si solo). Definir por entorno/--env-var." },
+    { "key": "testPassword", "value": "", "type": "string", "description": "NUNCA versionar un valor real acá. Pasar por --env-var testPassword=..." },
+    { "key": "jwtToken", "value": "", "type": "string", "description": "Se completa en tiempo de ejecucion con la respuesta de Login." },
+    { "key": "orderNumberA", "value": "", "type": "string", "description": "Orden activada, usada para el flujo completo de lecturas." },
+    { "key": "orderNumberB", "value": "", "type": "string", "description": "Orden con tara pero sin activar, para probar el rechazo por falta de activacion." },
+    { "key": "orderNumberNoExist", "value": "", "type": "string", "description": "orderNumber que nunca se crea en esta corrida." },
+    { "key": "extSuffix", "value": "", "type": "string" },
+    { "key": "claveA", "value": "", "type": "string", "description": "Se completa con la respuesta de la tara de A. No se imprime en ningun test ni reporte." },
+    { "key": "fechaInicioCarga1", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "username", "value": "{{testUsername}}", "type": "text" },
+            { "key": "password", "value": "{{testPassword}}", "type": "text" }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "login"] }
+      },
+      "event": [{
+        "listen": "prerequest",
+        "script": { "type": "text/javascript", "exec": [
+          "// Una sola vez por corrida completa (este es siempre el primer request).",
+          "// No depende de ningun flag persistente: siempre limpia y regenera.",
+          "pm.collectionVariables.set('jwtToken', '');",
+          "pm.collectionVariables.set('fechaInicioCarga1', '');",
+          "",
+          "var base = Date.now() % 2000000000;",
+          "pm.collectionVariables.set('orderNumberA', String(base));",
+          "pm.collectionVariables.set('orderNumberB', String(base + 1));",
+          "pm.collectionVariables.set('orderNumberNoExist', String(base + 500000));",
+          "pm.collectionVariables.set('extSuffix', String(base));"
+        ]}
+      }, {
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('login responde 200', function () { pm.response.to.have.status(200); });",
+          "pm.test('el cuerpo tiene forma de JWT', function () {",
+          "    var token = pm.response.text();",
+          "    pm.expect(token.split('.').length).to.eql(3);",
+          "    pm.collectionVariables.set('jwtToken', token);",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Crear orden A",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberA}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 8000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-TEL-{{extSuffix}}-A\",\n    \"patente\": \"TELA001\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-TEL-{{extSuffix}}-A\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"TelA\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-TEL-{{extSuffix}}-A\",\n    \"razonSocial\": \"Cliente Tel A\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-TEL-{{extSuffix}}-A\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden A creada en estado 1 (201)', function () {",
+        "    pm.response.to.have.status(201);",
+        "    pm.expect(pm.response.json().estado).to.eql(1);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "03 - Crear orden B",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"orderNumber\": {{orderNumberB}},\n  \"fechaCargaPrevista\": \"2026-11-05T09:00:00\",\n  \"presetKg\": 7000.000,\n  \"camion\": {\n    \"externalCode\": \"CAM-TEL-{{extSuffix}}-B\",\n    \"patente\": \"TELB001\",\n    \"capacidadKg\": 9000.000\n  },\n  \"chofer\": {\n    \"externalCode\": \"CHO-TEL-{{extSuffix}}-B\",\n    \"nombre\": \"Postman\",\n    \"apellido\": \"TelB\"\n  },\n  \"cliente\": {\n    \"externalCode\": \"CLI-TEL-{{extSuffix}}-B\",\n    \"razonSocial\": \"Cliente Tel B\"\n  },\n  \"producto\": {\n    \"externalCode\": \"PRD-TEL-{{extSuffix}}-B\",\n    \"nombre\": \"GLP\"\n  }\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('orden B creada en estado 1 (201)', function () {",
+        "    pm.response.to.have.status(201);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "04 - Tara sobre A",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 12000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "tara"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('tara A responde 200', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.collectionVariables.set('claveA', String(pm.response.json().claveActivacion));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "05 - Activacion sobre A",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"clave\": {{claveA}}\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/activacion", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "activacion"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('activacion A responde 200', function () { pm.response.to.have.status(200); });"
+      ]}}]
+    },
+    {
+      "name": "06 - Tara sobre B (sin activar)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"taraKg\": 11000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/tara", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "tara"] },
+        "description": "B queda en estado 2 pero nunca se activa: se usa para probar que una lectura sin activacion se rechaza."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('tara B responde 200', function () { pm.response.to.have.status(200); });"
+      ]}}]
+    },
+    {
+      "name": "07 - Lectura antes de activar (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 100.000,\n  \"densidad\": 0.5,\n  \"temperaturaC\": 20.0,\n  \"caudalKgH\": 1000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberB}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberB}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 409 por falta de activacion', function () {",
+        "    pm.response.to.have.status(409);",
+        "    pm.expect(pm.response.json().message).to.include('no fue activada');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "08 - Descarte antes del primer snapshot (caudal no positivo)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 100.000,\n  \"densidad\": 0.5,\n  \"temperaturaC\": 20.0,\n  \"caudalKgH\": 0.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] },
+        "description": "Primera lectura de A: todavia no hay snapshot. Se descarta por caudal<=0 y los campos deben ser null, no cero."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('descartada con campos null (sin snapshot previo)', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.aceptada).to.eql(false);",
+        "    pm.expect(body.motivoDescarte).to.eql('caudal_no_positivo');",
+        "    pm.expect(body.masaAcumuladaKg).to.be.null;",
+        "    pm.expect(body.fechaUltimaLectura).to.be.null;",
+        "    pm.expect(body.fechaInicioCarga).to.be.null;",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "09 - Descarte (masa no positiva)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 0.000,\n  \"densidad\": 0.5,\n  \"temperaturaC\": 20.0,\n  \"caudalKgH\": 1000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('descartada por masa no positiva, aun sin snapshot previo', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.aceptada).to.eql(false);",
+        "    pm.expect(body.motivoDescarte).to.eql('masa_no_positiva');",
+        "    pm.expect(body.masaAcumuladaKg).to.be.null;",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "10 - Primera lectura aceptada (fija fechaInicioCarga)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 1000.000,\n  \"densidad\": 0.54,\n  \"temperaturaC\": 18.5,\n  \"caudalKgH\": 3000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('aceptada, fija fechaInicioCarga', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.aceptada).to.eql(true);",
+        "    pm.expect(body.masaAcumuladaKg).to.eql(1000);",
+        "    pm.expect(body.fechaInicioCarga).to.be.a('string').and.to.have.length.above(0);",
+        "    pm.expect(body.fechaInicioCarga).to.eql(body.fechaUltimaLectura);",
+        "    pm.collectionVariables.set('fechaInicioCarga1', body.fechaInicioCarga);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "11 - Segunda lectura aceptada (conserva fechaInicioCarga)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 1500.000,\n  \"densidad\": 0.55,\n  \"temperaturaC\": 19.0,\n  \"caudalKgH\": 3100.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('aceptada, fechaInicioCarga sin cambios', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.aceptada).to.eql(true);",
+        "    pm.expect(body.fechaInicioCarga).to.eql(pm.collectionVariables.get('fechaInicioCarga1'));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "12 - Masa igual a la anterior (se acepta)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 1500.000,\n  \"densidad\": 0.55,\n  \"temperaturaC\": 19.0,\n  \"caudalKgH\": 3200.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('masa igual no se descarta', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().aceptada).to.eql(true);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "13 - Masa decreciente (descartada, snapshot sin cambios)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 1200.000,\n  \"densidad\": 0.55,\n  \"temperaturaC\": 19.0,\n  \"caudalKgH\": 3200.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('descartada por masa decreciente, snapshot conserva 1500', function () {",
+        "    pm.response.to.have.status(200);",
+        "    var body = pm.response.json();",
+        "    pm.expect(body.aceptada).to.eql(false);",
+        "    pm.expect(body.motivoDescarte).to.eql('masa_decreciente');",
+        "    pm.expect(body.masaAcumuladaKg).to.eql(1500);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "14 - Prioridad de motivos (caudal y masa no positivos a la vez)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": -5.000,\n  \"densidad\": 0.55,\n  \"temperaturaC\": 19.0,\n  \"caudalKgH\": -1.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('caudal_no_positivo gana por prioridad explicita', function () {",
+        "    pm.response.to.have.status(200);",
+        "    pm.expect(pm.response.json().motivoDescarte).to.eql('caudal_no_positivo');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "15 - Lectura sobre orden inexistente (404)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 100.000,\n  \"densidad\": 0.5,\n  \"temperaturaC\": 20.0,\n  \"caudalKgH\": 1000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberNoExist}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberNoExist}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 404', function () { pm.response.to.have.status(404); });"
+      ]}}]
+    },
+    {
+      "name": "16 - Campo ausente (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"densidad\": 0.5,\n  \"temperaturaC\": 20.0,\n  \"caudalKgH\": 1000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('responde 400 por masaAcumuladaKg ausente', function () {",
+        "    pm.response.to.have.status(400);",
+        "    pm.expect(pm.response.json().message).to.include('masaAcumuladaKg');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "17 - Lectura sin token (401)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"masaAcumuladaKg\": 100.000,\n  \"densidad\": 0.5,\n  \"temperaturaC\": 20.0,\n  \"caudalKgH\": 1000.000\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderNumberA}}/lecturas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderNumberA}}", "lecturas"] }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('sin token responde 401', function () { pm.response.to.have.status(401); });",
+        "pm.test('cuerpo vacio (no pasa por StandartResponse)', function () {",
+        "    pm.expect(pm.response.text()).to.have.lengthOf(0);",
+        "});"
+      ]}}]
+    }
+  ]
+}
