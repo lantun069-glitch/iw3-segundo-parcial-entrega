@@ -27,6 +27,14 @@ HTTPS, revisado con el runner de Postman. Detalle completo en
 [docs/despliegue-vm.md](docs/despliegue-vm.md). Esto no incluye el
 frontend ni los requisitos de F6–F8 del final.
 
+**Estado actual de la VM:** ese despliegue corresponde al código previo
+al retiro de ejemplos docentes ajenos al circuito de órdenes (catálogo
+de ejemplo, integraciones `cli1`/`cli2`, WebSocket demo, job de correo
+y endpoints de ejemplo — ver `docs/decisiones.md`). La VM todavía no se
+actualizó con esa limpieza: su Swagger sigue mostrando esos endpoints
+heredados. La actualización queda pendiente, con el plan en
+[docs/plan-actualizacion-vm.md](docs/plan-actualizacion-vm.md).
+
 ## Arranque local, paso a paso (Ubuntu)
 
 Pensado para clonar en una máquina Ubuntu limpia y tenerlo corriendo sin
@@ -37,12 +45,16 @@ primer plano y queda abierta; **Terminal B** es para todo lo demás
 ### 1. Requisitos e instalación
 
 ```bash
-# Git, openssl (para generar JWT_SECRET) y unzip (lo usa ./mvnw)
+# Git, openssl (para generar JWT_SECRET), unzip (lo usa ./mvnw) y curl
+# (paso 7, y lo usa el propio bloque de instalación de Docker más
+# abajo): instalalo acá aunque Docker ya esté instalado, porque ese
+# bloque se salta si Docker ya está.
 sudo apt update
-sudo apt install -y git openssl unzip
+sudo apt install -y git openssl unzip curl
 git --version
 openssl version
 unzip -v | head -1
+curl --version | head -1
 ```
 
 ```bash

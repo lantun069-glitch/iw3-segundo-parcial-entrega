@@ -44,14 +44,13 @@ postman collection run postman/iw3-f5-runner-circuito.postman_collection.json \
 Sin `postman login` ni `--output` (ninguno es necesario para correr una
 colección local).
 
-## Evidencia previa del equipo — no re-ejecutada sobre esta copia
+## Evidencia previa del equipo — histórica
 
-El código de esta copia es idéntico, archivo por archivo, al commit que
-el equipo verificó en su momento (`45710e3`, etiqueta
-`parcial-2-local-v1`). Los resultados siguientes fueron registrados por
-el equipo sobre ese mismo código, en su entorno local, **antes** de
-armar esta copia de entrega; no se volvieron a correr acá ni se repitió
-ninguna prueba para esta revisión.
+Los resultados de esta sección corresponden a la ejecución histórica
+sobre el commit `45710e3` (tag `parcial-2-local-v1`). No representan
+una reejecución sobre la versión actual. Las validaciones posteriores
+se detallan por separado, en "Limpieza de ejemplos docentes —
+verificación" más abajo.
 
 | Colección | Resultado registrado |
 | --- | --- |

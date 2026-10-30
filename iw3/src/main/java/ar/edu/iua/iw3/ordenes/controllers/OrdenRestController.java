@@ -55,8 +55,8 @@ import jakarta.validation.Valid;
  * (registrarLectura()), cierre (cerrar()), pesaje final con conciliacion
  * (pesajeFinal()) y consulta posterior de esa conciliacion
  * (conciliacion()). Los ultimos valores de temperatura/densidad/caudal
- * en la conciliacion no son promedios (ver docs/api.md, que no cubre
- * esta version). No expone CRUD/consulta para Orden ni para sus
+ * en la conciliacion no son promedios (ver docs/api.md). No expone
+ * CRUD/consulta para Orden ni para sus
  * referencias (Camion/Chofer/Cliente/Producto); eso no esta pedido.
  * No hay endpoint de consulta del snapshot/historico: la respuesta de
  * cada lectura ya devuelve el snapshot actual, suficiente para esta
@@ -83,7 +83,7 @@ import jakarta.validation.Valid;
  */
 @RestController
 @RequestMapping(Constants.URL_ORDERS)
-@Tag(description = "Recepcion y tara/activacion de ordenes de carga (F2/F3)", name = "Orden")
+@Tag(description = "Circuito completo de una orden de carga: recepcion, tara/activacion, telemetria, cierre, pesaje final y conciliacion", name = "Orden")
 public class OrdenRestController extends BaseRestController {
 
 	@Autowired

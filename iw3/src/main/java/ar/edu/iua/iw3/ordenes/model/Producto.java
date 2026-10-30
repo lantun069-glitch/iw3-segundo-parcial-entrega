@@ -12,8 +12,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Producto de la orden de carga (ej. GLP). No confundir con
- * ar.edu.iua.iw3.model.Product, el dominio de ejemplo del profesor.
+ * Producto transportado en una orden de carga (ej. GLP). Se sincroniza
+ * por {@code externalCode} al recibir la orden (ver docs/api.md): si
+ * no existe se crea, si existe se actualiza.
  */
 @Entity
 @Table(name = "productos_orden")

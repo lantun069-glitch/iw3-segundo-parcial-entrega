@@ -109,18 +109,6 @@
 				<spring.profiles.active>mysqlprod</spring.profiles.active>
 			</properties>
 		</profile>
-		<profile>
-			<id>cli1</id>
-			<properties>
-				<spring.profiles.active>cli1</spring.profiles.active>
-			</properties>
-		</profile>
-		<profile>
-			<id>cli2</id>
-			<properties>
-				<spring.profiles.active>cli2</spring.profiles.active>
-			</properties>
-		</profile>
 
 		<!-- Perfiles de empaquetado -->
 		<profile>
