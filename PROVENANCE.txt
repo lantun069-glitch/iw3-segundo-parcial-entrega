@@ -46,3 +46,18 @@ develop) es trabajo del final, fuera de alcance de esta entrega.
 
 Base de datos MySQL: no incluida (fuera de alcance de este contenido,
 igual que en el resto del proyecto).
+
+Retiro de ejemplos docentes ajenos al circuito de órdenes (rama
+`chore/retirar-ejemplos-docentes`, posterior al commit inicial de este
+repositorio): se quitó el código de ejemplo de la base docente que no
+pertenece al circuito de órdenes del segundo parcial ni está citado en
+la consigna transcripta en docs/fuentes.md (catálogo de
+productos/categorías, integraciones `cli1`/`cli2`, WebSocket de
+chat/gráfico, job de productos vencidos con envío de correo,
+`AuthtestRestController`, endpoint `/demo/encodepass`). Detalle completo
+en docs/decisiones.md. Es una decisión del equipo basada en el alcance
+documentado disponible; no se confirmó contra las fuentes oficiales de
+la cátedra en NotebookLM por no estar accesible la sesión en ese
+momento. La atribución a la base docente (`magm3333/iw3_2026`) y su
+licencia de terceros no cambian: lo que se retiró es código de ejemplo
+de esa misma base, no la atribución.

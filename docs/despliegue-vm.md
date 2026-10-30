@@ -24,6 +24,16 @@ cliente (Postman / curl)
 `adminer` se mantuvo como servicio ya existente del proyecto Compose, sin
 cambios.
 
+**Estado respecto a la limpieza de ejemplos docentes (`docs/decisiones.md`):**
+todo lo descripto en este documento — arquitectura, empaquetado y evidencia
+de verificación — corresponde a la versión desplegada el 28/10/2026, **antes**
+de retirar el catálogo de ejemplo, `cli1`/`cli2`, el WebSocket demo, el job de
+correo y los endpoints de ejemplo. Esa versión anterior sigue siendo la que
+corre en la VM; su Swagger todavía expone esos endpoints heredados. Esta
+limpieza no está desplegada hasta que se ejecute y compruebe un despliegue
+posterior (ver `docs/plan-actualizacion-vm.md`); este documento no se
+reescribe para reflejar un estado que todavía no ocurrió.
+
 ## Ubicaciones en la VM
 
 - Proyecto Compose reutilizado: `/home/user/infra/docker-compose.yml`.
@@ -112,8 +122,9 @@ colección F5 Runner:
 Ambas iteraciones completaron login, recepción, tara, activación, dos
 lecturas, cierre, pesaje final y consulta de conciliación; la
 conciliación consultada coincidió con la respuesta del pesaje final.
-Evidencia: capturas revisadas por el usuario, no una ejecución ni un
-reporte exportado por este asistente.
+Resultado confirmado manualmente por el usuario mediante capturas de
+pantalla de esa corrida; no se dispone de un reporte exportado de esa
+ejecución.
 
 Este circuito completo **solo se ejecutó contra `lantun069`**, no contra
 los otros tres dominios listados abajo.

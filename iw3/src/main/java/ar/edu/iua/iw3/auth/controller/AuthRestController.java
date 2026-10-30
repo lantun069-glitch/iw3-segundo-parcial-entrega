@@ -13,8 +13,6 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -72,17 +70,5 @@ public class AuthRestController extends BaseRestController {
 		applicationEventPublisher.publishEvent(new UserEvent(user, request, UserEvent.TypeEvent.LOGIN));
 
 		return new ResponseEntity<String>(token, HttpStatus.OK);
-	}
-	@Autowired
-	private PasswordEncoder pEncoder;
-
-	@GetMapping(value = "/demo/encodepass", produces = MediaType.TEXT_PLAIN_VALUE)
-	public ResponseEntity<?> encodepass(@RequestParam String password) {
-		try {
-			return new ResponseEntity<String>(pEncoder.encode(password), HttpStatus.OK);
-		} catch (Exception e) {
-			return new ResponseEntity<>(response.build(HttpStatus.INTERNAL_SERVER_ERROR, e, e.getMessage()),
-					HttpStatus.INTERNAL_SERVER_ERROR);
-		}
 	}
 }

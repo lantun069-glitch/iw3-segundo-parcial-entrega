@@ -213,10 +213,7 @@ source ../.env.mysql
 source ../.env.jwt
 set +a
 
-export SMTP_USER=no-usado-local@example.invalid
-export SMTP_PASS=no-usado-local
 export SPRING_PROFILES_ACTIVE=mysqldev
-export EXPIRED_NOTIFICATION_ENABLED=false
 
 ./mvnw -Dbuild=war -Pmysqldev spring-boot:run
 ```
@@ -224,12 +221,6 @@ export EXPIRED_NOTIFICATION_ENABLED=false
 - `source ../.env.mysql` y `source ../.env.jwt` exportan al proceso de
   Spring las **mismas** variables que usó Docker en el paso anterior
   (por eso no pueden quedar distintas entre los dos).
-- `SMTP_USER`/`SMTP_PASS`: Spring exige que existan para arrancar (no
-  tienen valor por defecto en el código), pero en esta entrega **no se
-  envía correo real** — el job que lo haría queda deshabilitado por
-  `EXPIRED_NOTIFICATION_ENABLED=false`. Cualquier valor con forma de
-  email/contraseña sirve; los de arriba son ficticios, no hace falta que
-  existan de verdad.
 - `-Dbuild=war` activa el perfil de empaquetado que este `pom.xml`
   necesita para resolver `packaging.type` (sin este flag, Maven falla).
 - `-Pmysqldev` selecciona el perfil **Maven**; `SPRING_PROFILES_ACTIVE=mysqldev`
@@ -278,10 +269,24 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/login \
   --data-urlencode "username=${TEST_USERNAME}" \
   --data-urlencode "password=${TEST_PASSWORD}")
 
-curl -s http://localhost:8080/api/v1/products -H "Authorization: Bearer ${TOKEN}"
+# Sin token: el filtro de seguridad debe rechazar antes de llegar al controller.
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/v1/orders/999999/conciliacion
+
+# Con token, sobre una orden que no existe: debe llegar al controller y
+# responder 404 de negocio (StandartResponse), no un 401.
+curl -s http://localhost:8080/api/v1/orders/999999/conciliacion -H "Authorization: Bearer ${TOKEN}"
 ```
 
-Debería devolver una lista (vacía o no) en vez de `401`.
+Sin token: `401` (cuerpo vacío, Spring Security corta antes del controller).
+Con token: `404` con cuerpo `StandartResponse` (`message`/`code`/`devInfo`)
+indicando que la orden `999999` no existe — confirma que el token fue
+aceptado y que la petición llegó al controller de órdenes. Ese cuerpo es
+la diferencia relevante: una ruta que no existe en esta app, aun con token
+válido, también puede responder `401` (no `404`) por el reenvío interno a
+`/error` que pierde la autenticación stateless — ver "Manejo de errores
+sin advice global" en `docs/decisiones.md`. Por eso un `401` aislado no
+alcanza para confirmar nada por sí solo, y lo que demuestra que el token
+fue aceptado es específicamente este `404` con cuerpo `StandartResponse`.
 
 **Swagger:** abrir en el navegador `http://localhost:8080/swagger-ui.html`.
 
@@ -335,3 +340,4 @@ docker compose --env-file .env.mysql -f compose.local.yaml up -d mysql
 - [docs/decisiones.md](docs/decisiones.md) — decisiones técnicas de diseño.
 - [docs/fuentes.md](docs/fuentes.md) — base docente, atribuciones y fuentes.
 - [docs/despliegue-vm.md](docs/despliegue-vm.md) — despliegue verificado en la VM de la cátedra.
+- [docs/plan-actualizacion-vm.md](docs/plan-actualizacion-vm.md) — plan pendiente para desplegar esta limpieza en la VM.

@@ -10,7 +10,7 @@
 #
 # El hash BCrypt se genera localmente, con la misma clase que usa el
 # backend (BCryptPasswordEncoder, ya una dependencia resuelta por
-# Maven), compilada al vuelo. No llama a /demo/encodepass por HTTP.
+# Maven), compilada al vuelo. No llama a ningún endpoint HTTP.
 #
 # La contraseña se pide por entrada interactiva (oculta), nunca como
 # argumento, para que no quede en el historial de la shell.

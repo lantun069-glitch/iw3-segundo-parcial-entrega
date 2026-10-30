@@ -4,10 +4,13 @@
 
 `https://github.com/magm3333/iw3_2026`, commit
 `b7e705de737e5b1039719807bb413ec89279e7d1` (rama `main`, "Backend
-completo"). El proyecto no declara una licencia propia; los componentes
-de terceros incluidos (Maven Wrapper en `iw3/mvnw`/`iw3/mvnw.cmd`,
-librerías JS en `iw3/src/main/resources/static/ui/js/`) conservan sus
-avisos de licencia originales, sin modificaciones.
+completo"). El proyecto no declara una licencia propia; el componente
+de terceros incluido que queda en esta entrega, el Maven Wrapper
+(`iw3/mvnw`/`iw3/mvnw.cmd`), conserva su aviso de licencia original, sin
+modificaciones. Las librerías JS que acompañaban la demo de WebSocket
+(`iw3/src/main/resources/static/ui/js/`) se retiraron junto con esa
+demo (ver `docs/decisiones.md`), ya que no pertenecen al circuito de
+órdenes.
 
 ## Consigna del trabajo integrador
 

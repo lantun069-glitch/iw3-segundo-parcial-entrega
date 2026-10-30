@@ -1,34 +1,20 @@
 package ar.edu.iua.iw3.config.profile;
 
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
+// Sin ejemplos de integración por cliente en esta entrega: ya no hace
+// falta excluir paquetes del escaneo de repositorios. Se deja explícito
+// igual (en vez de delegar en el autoescaneo por defecto de Spring Boot)
+// para fijar qué paquetes de entidades forman parte de esta versión.
 @Configuration
-@EnableJpaRepositories(basePackages = "ar.edu.iua.iw3", 
-excludeFilters = {
-		@ComponentScan.Filter(type = FilterType.REGEX, pattern = "ar\\.edu\\.iua\\.iw3\\.integration\\.cli2\\..*" )
-		//Se pueden definir más filtros de exclusión
-		//,@ComponentScan.Filter(type = FilterType.REGEX, pattern = "org\\.magm\\.backend\\.integration\\.cliN\\..*" )
-})
-//Entidades
-@EntityScan(basePackages = { 
-		"ar.edu.iua.iw3.model",
+@EnableJpaRepositories(basePackages = "ar.edu.iua.iw3")
+@EntityScan(basePackages = {
 		"ar.edu.iua.iw3.auth",
-		"ar.edu.iua.iw3.integration.cli1.model",
 		"ar.edu.iua.iw3.ordenes.model"
-},
-basePackageClasses = {
-		// Se pueden cargar entidades particulares que no estén en los paquetes base
-		//ar.edu.iua.iw3.integration.cliN.model.Entidad1.class, 
-		//ar.edu.iua.iw3.integration.cliN.model.Entidad2.class
-	})
-
-//Las dos líneas que siguen son equivalentes, se puede usar cualquiera
-//@ConditionalOnExpression(value = "'${spring.profiles.active:-}'=='cli2'")
+})
 @Profile("mysqldev")
 public class MysqldevScanConfig {
 

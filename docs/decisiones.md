@@ -12,9 +12,9 @@ falla o es rechazada explícitamente (caso `JWT_SECRET`).
 
 ## Perfiles Maven vs. perfiles Spring
 
-Los perfiles del POM (`mysqldev`, `mysqlprod`, `cli1`, `cli2`) solo fijan
-una propiedad Maven; no activan por sí solos el perfil Spring equivalente
-en runtime, que hay que exportarlo aparte (`SPRING_PROFILES_ACTIVE`).
+Los perfiles del POM (`mysqldev`, `mysqlprod`) solo fijan una propiedad
+Maven; no activan por sí solos el perfil Spring equivalente en runtime,
+que hay que exportarlo aparte (`SPRING_PROFILES_ACTIVE`).
 
 ## Manejo de errores sin advice global
 
@@ -50,3 +50,38 @@ activación y conciliación.
 Se audita cada cambio de **estado** (creación, tara, cierre, pesaje
 final) con una fila en el historial. La activación y una lectura
 aceptada no agregan fila porque no cambian `estado`.
+
+## Retiro de ejemplos docentes ajenos al alcance del segundo parcial
+
+La base docente (`docs/fuentes.md`) incluye módulos de ejemplo que no
+forman parte del circuito de órdenes ni están citados en la consigna
+transcripta: catálogo de productos/categorías, las integraciones
+`cli1`/`cli2` (y sus perfiles Maven/Spring), el WebSocket de chat y
+gráfico con su UI estática, el job programado de productos vencidos
+con el envío de correo (`EmailBusiness`), los endpoints de ejemplo de
+autorización (`AuthtestRestController`) y el endpoint de utilidad
+`/demo/encodepass`. Se retiraron de esta entrega por decisión del
+equipo, en base al alcance documentado en `docs/api.md` y a las citas
+disponibles de la consigna — no se confirmó esta exclusión contra las
+fuentes oficiales de la cátedra en NotebookLM por no estar disponible
+la sesión al momento de este cambio.
+
+Se conservó explícitamente `ar.edu.iua.iw3.business.execption`
+(`BusinessException`, `FoundException`, `NotFoundException`): aunque
+vive junto al ejemplo de productos/categorías ya retirado, también lo
+usan `OrdenBusiness`, `IOrdenBusiness` y `OrdenRestController`.
+
+Al retirar las integraciones `cli1`/`cli2` ya no hace falta excluir sus
+paquetes del escaneo de repositorios/entidades por perfil: las clases
+`MysqldevScanConfig`/`MysqlprodScanConfig` se simplificaron a listar
+explícitamente solo `ar.edu.iua.iw3.auth` y `ar.edu.iua.iw3.ordenes.model`
+como paquetes de entidades, sin filtros de exclusión.
+
+El job de productos vencidos era el único motivo por el que
+`SMTP_USER`/`SMTP_PASS`/`SMTP_HOST`/`SMTP_PORT`/`MAIL_FROM`/
+`NOTIFY_TEST_RECIPIENT`/`EXPIRED_NOTIFICATION_ENABLED` existían; al
+retirar `EmailBusiness`, `MailRestController` y el job, esas variables
+y la dependencia `spring-boot-starter-mail` ya no tienen consumidor y
+se retiraron también. `spring-websocket`/`spring-messaging` se
+retiraron por el mismo motivo (sin consumidor tras retirar el paquete
+`websocket`).
