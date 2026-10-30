@@ -27,13 +27,12 @@ HTTPS, revisado con el runner de Postman. Detalle completo en
 [docs/despliegue-vm.md](docs/despliegue-vm.md). Esto no incluye el
 frontend ni los requisitos de F6–F8 del final.
 
-**Estado actual de la VM:** ese despliegue corresponde al código previo
-al retiro de ejemplos docentes ajenos al circuito de órdenes (catálogo
-de ejemplo, integraciones `cli1`/`cli2`, WebSocket demo, job de correo
-y endpoints de ejemplo — ver `docs/decisiones.md`). La VM todavía no se
-actualizó con esa limpieza: su Swagger sigue mostrando esos endpoints
-heredados. La actualización queda pendiente, con el plan en
-[docs/plan-actualizacion-vm.md](docs/plan-actualizacion-vm.md).
+**Estado actual de la VM:** actualizada el 30/10/2026 con el commit
+`84cb795` (limpieza de ejemplos docentes aplicada — ver
+`docs/decisiones.md`). Login, circuito completo (Postman F5) y OpenAPI
+verificados contra `lantun069.duckdns.org`. Detalle completo, evidencia
+y alcance de esa verificación en
+[docs/despliegue-vm.md](docs/despliegue-vm.md).
 
 ## Arranque local, paso a paso (Ubuntu)
 
@@ -352,4 +351,4 @@ docker compose --env-file .env.mysql -f compose.local.yaml up -d mysql
 - [docs/decisiones.md](docs/decisiones.md) — decisiones técnicas de diseño.
 - [docs/fuentes.md](docs/fuentes.md) — base docente, atribuciones y fuentes.
 - [docs/despliegue-vm.md](docs/despliegue-vm.md) — despliegue verificado en la VM de la cátedra.
-- [docs/plan-actualizacion-vm.md](docs/plan-actualizacion-vm.md) — plan pendiente para desplegar esta limpieza en la VM.
+- [docs/plan-actualizacion-vm.md](docs/plan-actualizacion-vm.md) — plan de ese despliegue, con su estado de aplicación.

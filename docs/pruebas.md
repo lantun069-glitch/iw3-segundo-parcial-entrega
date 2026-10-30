@@ -77,6 +77,25 @@ Detalle de arquitectura, evidencia y límites de esa verificación en
 evidencia local de la tabla anterior, que sigue siendo la referencia
 completa por colección.
 
+## Evidencia de despliegue en la VM — actualización (30/10/2026)
+
+Con la limpieza de ejemplos docentes ya desplegada (commit `84cb795`,
+ver `docs/despliegue-vm.md`), el runner F5 se volvió a ejecutar contra
+la VM, por HTTPS, desde Postman Desktop, entorno "IW3 VM", contra
+`lantun069.duckdns.org`: 2 iteraciones, 68 comprobaciones aprobadas, 0
+fallidas, 0 omitidas. No se registró la cantidad de peticiones ni la
+duración de esta corrida en particular. Evidencia aportada por el
+equipo (capturas), no un reporte exportado automáticamente.
+
+Esta corrida es posterior a la limpieza y corresponde al código nuevo;
+no reemplaza ni se mezcla con la evidencia histórica de la tabla de
+"Evidencia previa del equipo" ni con la validación local de la rama
+`chore/retirar-ejemplos-docentes` documentada más abajo — son tres
+corridas distintas, en tres entornos distintos, en tres momentos
+distintos. Detalle completo, límites y lo que no se verificó en esta
+actualización (los otros tres dominios no se volvieron a chequear) en
+`docs/despliegue-vm.md`.
+
 ## Validación de la guía de arranque local
 
 Se probó la guía de arranque (README) sobre una copia temporal de este

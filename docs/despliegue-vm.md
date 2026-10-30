@@ -25,14 +25,15 @@ cliente (Postman / curl)
 cambios.
 
 **Estado respecto a la limpieza de ejemplos docentes (`docs/decisiones.md`):**
-todo lo descripto en este documento — arquitectura, empaquetado y evidencia
-de verificación — corresponde a la versión desplegada el 28/10/2026, **antes**
-de retirar el catálogo de ejemplo, `cli1`/`cli2`, el WebSocket demo, el job de
-correo y los endpoints de ejemplo. Esa versión anterior sigue siendo la que
-corre en la VM; su Swagger todavía expone esos endpoints heredados. Esta
-limpieza no está desplegada hasta que se ejecute y compruebe un despliegue
-posterior (ver `docs/plan-actualizacion-vm.md`); este documento no se
-reescribe para reflejar un estado que todavía no ocurrió.
+lo descripto en esta sección y en "Evidencia de verificación (28/10/2026)"
+corresponde a la versión desplegada ese día, **antes** de retirar el
+catálogo de ejemplo, `cli1`/`cli2`, el WebSocket demo, el job de correo
+y los endpoints de ejemplo. Esa limpieza ya se desplegó y se validó el
+30/10/2026 — ver "Actualización del despliegue (30/10/2026)" más abajo
+para el detalle y la evidencia de esa versión nueva. La arquitectura,
+las ubicaciones y el procedimiento de empaquetado de esta sección siguen
+describiendo la base del despliegue (no cambiaron con la limpieza); lo
+que cambió es el artefacto desplegado sobre esa misma base.
 
 ## Ubicaciones en la VM
 
@@ -171,3 +172,53 @@ no se verificó como corregido en este despliegue.
   Postman). No incluye el frontend ni los requisitos de F6–F8 del final
   (roles/autorización completa, alarmas por correo, UI), que siguen sin
   desplegarse y sin declararse cerrados.
+
+## Actualización del despliegue (30/10/2026) — limpieza de ejemplos docentes aplicada
+
+Se desplegó y validó, sobre la misma base descripta arriba (arquitectura,
+imagen de Tomcat, `RemoteIpValve`, nginx, dominios), el commit `84cb795`
+del repositorio de entrega — la limpieza de ejemplos docentes de
+`docs/decisiones.md`. Procedimiento según `docs/plan-actualizacion-vm.md`.
+
+### Artefacto desplegado
+
+- Commit: `84cb7950f5e0b4b22cf405bd6950d7365f12e300`.
+- SHA256 del WAR desplegado:
+  `75eaffde153085dcc6115ba7f1b13a1e7ff1be18f8408f7d7b02e2436596a99a`.
+- Imagen de Tomcat: `tomcat:11.0.27-jdk21-temurin` (sin cambios respecto
+  al despliegue anterior).
+- Registro de identificación del artefacto: `2026-10-30T04:58:15+00:00`.
+
+### Respaldo
+
+- Respaldo inicial, antes de sustituir el artefacto:
+  `/home/user/backups/iw3-actualizacion-20261030-045118`.
+- Durante la sustitución, con el backend detenido, se tomó un respaldo
+  adicional (WAR y carpeta expandida `ROOT/` previos, movidos fuera de
+  `tomcat/webapps/` — ver `docs/plan-actualizacion-vm.md`). Su ruta
+  exacta no quedó registrada en la evidencia disponible para este
+  documento; no se la reconstruye por hipótesis.
+
+### Evidencia de verificación — aportada por el equipo
+
+Evidencia manual (capturas), no un reporte exportado automáticamente —
+mismo criterio que la evidencia del 28/10/2026 de más arriba:
+
+- **Swagger** de `lantun069.duckdns.org`: servidor HTTPS, y únicamente
+  `POST /api/v1/login` y las siete operaciones de `/api/v1/orders/**`
+  — sin los endpoints retirados por la limpieza.
+- **Postman Desktop**, entorno "IW3 VM", contra `lantun069`: 2
+  iteraciones, 68 comprobaciones aprobadas, 0 fallidas, 0 omitidas.
+
+### Qué no se verificó en esta actualización
+
+- Los otros tres dominios (`jovan-iw3`, `jtoledo495`, `mrodriguez579`):
+  no se adjuntó un chequeo actualizado de su OpenAPI contra este
+  despliegue. La tabla de disponibilidad del 28/10/2026 de más arriba
+  sigue siendo la última evidencia registrada para esos tres; no se los
+  declara verificados de nuevo acá.
+- La cantidad de peticiones y la duración de esta corrida de Postman
+  (solo se registraron iteraciones, comprobaciones aprobadas, fallidas
+  y omitidas).
+- Lo que ya estaba fuera de alcance en el despliegue anterior
+  (frontend, F6–F8, envío real de correo) sigue igual.

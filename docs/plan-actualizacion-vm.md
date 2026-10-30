@@ -1,18 +1,20 @@
-# Plan de actualización de la VM (pendiente — no ejecutado)
+# Plan de actualización de la VM — aplicado el 30/10/2026
 
-Este documento es un plan para una etapa siguiente, separada de esta
-limpieza. No se ejecutó ningún paso de este plan; la VM sigue sin
-tocarse, con la versión descripta en `docs/despliegue-vm.md` (anterior
-al retiro de ejemplos docentes, ver `docs/decisiones.md`). Su Swagger
-actual muestra los endpoints heredados porque esa es la versión que
-sigue desplegada.
+Este plan ya se aplicó: el commit `84cb795` (limpieza de ejemplos
+docentes, `docs/decisiones.md`) está desplegado en la VM desde el
+30/10/2026. Evidencia, artefacto desplegado (hash del WAR) y qué quedó
+sin verificar en esta actualización (los otros tres dominios, la ruta
+exacta de un respaldo intermedio) en "Actualización del despliegue
+(30/10/2026)" de `docs/despliegue-vm.md`. Los pasos de abajo describen
+el procedimiento seguido — se conservan como referencia para la
+próxima actualización, no como un plan todavía pendiente.
 
 Los valores de rutas, imágenes y configuración citados abajo son los
-que quedaron **registrados** en `docs/despliegue-vm.md` al momento de
-ese despliegue (28/10/2026); no se volvieron a inspeccionar en la VM
-para este plan. El paso 1 es, precisamente, confirmarlos en la VM real
-antes de tocar nada — no asumir que siguen vigentes sin esa
-confirmación.
+que quedaron **registrados** en `docs/despliegue-vm.md` al momento del
+despliegue anterior (28/10/2026); no hay confirmación documentada de
+que se hayan vuelto a inspeccionar uno por uno antes de esta
+actualización, más allá de lo que ya consta como evidencia en
+`docs/despliegue-vm.md`.
 
 ## 1. Identificar la versión y configuración desplegadas actualmente
 
